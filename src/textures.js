@@ -77,6 +77,56 @@ export function carpetTexture(base, meters = 1) {
   return finish(c, meters);
 }
 
+// Carpet tiles the way Emad's office floor is laid: a field of colors[0] with
+// rectangular patches (1–3 tiles a side) of the other colours. 50 cm tiles;
+// the pattern wraps so it tiles seamlessly every `tilesAcross` tiles.
+export function carpetTileTexture(colors, weights, tile = 0.5, tilesAcross = 12) {
+  const size = 1024;
+  const [c, ctx] = canvas(size);
+  const r = rng(23);
+  const px = size / tilesAcross;
+  const n = tilesAcross;
+  const grid = Array.from({ length: n }, () => Array(n).fill(0));
+  const patchWeights = weights.slice(1);
+  const total = patchWeights.reduce((s, w) => s + w, 0);
+  const pickPatch = () => {
+    const t = r() * total;
+    let acc = 0;
+    for (let i = 0; i < patchWeights.length; i++) {
+      acc += patchWeights[i];
+      if (t < acc) return i + 1;
+    }
+    return colors.length - 1;
+  };
+  const patches = Math.round(n * n * 0.12);
+  for (let p = 0; p < patches; p++) {
+    const ci = pickPatch();
+    const w = 1 + Math.floor(r() * 3);
+    const h = 1 + Math.floor(r() * 3);
+    const x = Math.floor(r() * n);
+    const y = Math.floor(r() * n);
+    for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) grid[(x + i) % n][(y + j) % n] = ci;
+  }
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      ctx.fillStyle = shade(colors[grid[i][j]], (r() - 0.5) * 0.03);
+      ctx.fillRect(i * px, j * px, px, px);
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.fillRect(i * px, j * px, px, 1);
+      ctx.fillRect(i * px, j * px, 1, px);
+    }
+  }
+  const img = ctx.getImageData(0, 0, size, size);
+  for (let k = 0; k < img.data.length; k += 4) {
+    const n = (r() - 0.5) * 34;
+    img.data[k] += n;
+    img.data[k + 1] += n;
+    img.data[k + 2] += n;
+  }
+  ctx.putImageData(img, 0, 0);
+  return finish(c, tile * tilesAcross);
+}
+
 export function tileTexture(base, grout = '#b9b9b9', n = 2, meters = 1.2) {
   const [c, ctx] = canvas(512);
   const r = rng(5);
@@ -116,6 +166,7 @@ export function concreteTexture(base, meters = 1.5) {
 }
 
 export const FLOORS = {
+  carpetTiles: { name: 'Carpet tiles, grey mix (ours)', make: () => carpetTileTexture(['#303337', '#52565a', '#787c80'], [0.5, 0.28, 0.22]) },
   oak: { name: 'Oak planks', make: () => woodTexture('#c49a6c') },
   walnut: { name: 'Walnut planks', make: () => woodTexture('#6e4b33') },
   ash: { name: 'Light ash', make: () => woodTexture('#e3d3b5') },

@@ -161,12 +161,18 @@ export function createUI(h) {
       el('h3', {}, ['Entrance door (bottom wall)']),
       field('From left', num(room.entranceDoor.from, { step: 0.05, min: 0 }, r((m, v) => (m.entranceDoor.from = v)))),
       field('Width', num(room.entranceDoor.width, { step: 0.05, min: 0.6 }, r((m, v) => (m.entranceDoor.width = v)))),
-      el('h3', {}, ['Kitchen door (partition)']),
+      el('h3', {}, ['Kitchen door (side partition)']),
       field('From corner', num(room.kitchenDoor.from, { step: 0.05, min: 0 }, r((m, v) => (m.kitchenDoor.from = v)))),
       field('Width', num(room.kitchenDoor.width, { step: 0.05, min: 0.6 }, r((m, v) => (m.kitchenDoor.width = v)))),
+      el('h3', {}, ['Bathroom (right part of the notch)']),
+      field('Width', num(room.bathroom.width, { step: 0.05, min: 0 }, r((m, v) => (m.bathroom.width = v)))),
+      field('Door from top', num(room.bathroom.door.from, { step: 0.05, min: 0 }, r((m, v) => (m.bathroom.door.from = v)))),
+      field('Door width', num(room.bathroom.door.width, { step: 0.05, min: 0.6 }, r((m, v) => (m.bathroom.door.width = v)))),
+      el('div', { class: 'hint' }, ['Door is on the kitchen/bathroom wall and opens into the kitchen. Width 0 removes the bathroom.']),
       el('h3', {}, ['Floors']),
       field('Office', select(Object.entries(FLOORS).map(([k, f]) => [k, f.name]), room.floor, r((m, v) => (m.floor = v)))),
-      field('Kitchen', select(Object.entries(FLOORS).map(([k, f]) => [k, f.name]), room.kitchenFloor, r((m, v) => (m.kitchenFloor = v))))
+      field('Kitchen', select(Object.entries(FLOORS).map(([k, f]) => [k, f.name]), room.kitchenFloor, r((m, v) => (m.kitchenFloor = v)))),
+      field('Bathroom', select(Object.entries(FLOORS).map(([k, f]) => [k, f.name]), room.bathroom.floor, r((m, v) => (m.bathroom.floor = v))))
     );
 
     const timeLabel = el('span', {}, [fmtHour(lighting.hour)]);

@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { PhotoMode } from './photo.js';
 import { buildRoom, disposeGroup, roomPolygons } from './room.js';
 import { createLighting } from './lighting.js';
 import { Editor } from './editor.js';
@@ -25,6 +33,13 @@ viewport.appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
 
+// Image-based ambient light: soft reflections on metal, glass and screens.
+{
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+}
+
 // Near plane kept at 0.1 for depth precision; the eye-level view never needs closer.
 const persp = new THREE.PerspectiveCamera(50, 1, 0.1, 120);
 const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
@@ -47,6 +62,28 @@ let view = '3d';
 const activeCamera = () => (view === 'plan' ? ortho : persp);
 const activeControls = () => (view === 'plan' ? controlsPlan : controls3d);
 
+// ---- post-processing: AO grounds the furniture, bloom lifts the lights ---
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, persp);
+const gtaoPass = new GTAOPass(scene, persp, 1, 1);
+gtaoPass.updateGtaoMaterial({ radius: 0.3, distanceExponent: 1, thickness: 1, scale: 1, samples: 16, distanceFallOff: 1, screenSpaceRadius: false });
+gtaoPass.blendIntensity = 0.85;
+// Threshold sits above sunlit walls so only screens and lamps glow.
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.08, 0.5, 2.2);
+composer.addPass(renderPass);
+composer.addPass(gtaoPass);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
+composer.addPass(new SMAAPass());
+
+function syncPasses() {
+  const cam = activeCamera();
+  renderPass.camera = cam;
+  gtaoPass.camera = cam;
+  // The AO shader is compiled for a perspective camera; plan view does without.
+  gtaoPass.enabled = view !== 'plan';
+}
+
 // ---- room, lighting, editor ------------------------------------------------
 const lighting = createLighting(scene);
 let room = null;
@@ -67,7 +104,15 @@ const editor = new Editor({
 
 function roomInfo() {
   const p = roomPolygons(state.room);
-  return { polygons: { office: p.office, kitchen: p.kitchen }, W: p.W, L: p.L, nw: p.nw, nd: p.nd, ceiling: state.room.ceiling };
+  return {
+    polygons: { office: p.office, kitchen: p.kitchen, bathroom: p.bathroom },
+    W: p.W,
+    L: p.L,
+    nw: p.nw,
+    nd: p.nd,
+    bw: p.bw,
+    ceiling: state.room.ceiling,
+  };
 }
 
 function rebuildRoom({ refit = false } = {}) {
@@ -122,11 +167,13 @@ function setCeilingVisible(on) {
 
 let ceilingBeforeDoorView = null;
 function setView(v) {
+  if (photo.active) exitPhoto();
   const wasDoor = view === 'door';
   view = v;
   controls3d.enabled = v !== 'plan';
   controlsPlan.enabled = v === 'plan';
-  document.querySelectorAll('#viewButtons button').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
+  syncPasses();
+  document.querySelectorAll('#viewButtons button[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
   // Eye level needs a ceiling; the overview needs it out of the way.
   if (v === 'door' && !wasDoor) {
     ceilingBeforeDoorView = document.getElementById('ceilingToggle').checked;
@@ -148,7 +195,7 @@ function setView(v) {
 
 // Walls between the camera and the room fade so the inside stays visible.
 function updateWallFade() {
-  if (!room) return;
+  if (!room || photo.active) return;
   const cam = activeCamera();
   for (const g of room.walls) {
     const [nx, nz] = g.userData.normal;
@@ -160,6 +207,39 @@ function updateWallFade() {
     m.depthWrite = m.opacity > 0.9;
   }
 }
+
+// ---- photo mode ------------------------------------------------------------
+const photoBar = document.getElementById('photoBar');
+const photoStatus = document.getElementById('photoStatus');
+const photo = new PhotoMode({
+  renderer,
+  scene,
+  getCamera: activeCamera,
+  getControls: activeControls,
+  onStatus: (t) => (photoStatus.textContent = t),
+});
+
+async function enterPhoto() {
+  if (photo.active) return;
+  editor.select(null);
+  editor.enabled = false;
+  labelRenderer.domElement.style.display = 'none';
+  photoBar.hidden = false;
+  document.getElementById('photoBtn').classList.add('active');
+  await photo.enter({ walls: room.walls, day: lighting.day });
+}
+
+function exitPhoto() {
+  photo.exit();
+  editor.enabled = true;
+  labelRenderer.domElement.style.display = document.getElementById('dimsToggle').checked ? '' : 'none';
+  photoBar.hidden = true;
+  document.getElementById('photoBtn').classList.remove('active');
+}
+
+document.getElementById('photoBtn').addEventListener('click', () => (photo.active ? exitPhoto() : enterPhoto()));
+document.getElementById('photoExit').addEventListener('click', exitPhoto);
+document.getElementById('photoSave').addEventListener('click', () => photo.savePNG());
 
 // ---- persistence -----------------------------------------------------------
 let saveTimer = null;
@@ -174,6 +254,7 @@ function persist() {
 }
 
 function applyState(s) {
+  if (photo.active) exitPhoto();
   state = s;
   editor.load(state.items);
   rebuildRoom({ refit: true });
@@ -199,6 +280,7 @@ const ui = createUI({
     if (a === 'delete') editor.deleteSelected();
   },
   onRoomChange: (mutate) => {
+    if (photo.active) exitPhoto();
     mutate(state.room);
     rebuildRoom();
     ui.renderRoom(state.room, state.lighting);
@@ -227,7 +309,7 @@ const ui = createUI({
   },
 });
 
-document.querySelectorAll('#viewButtons button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+document.querySelectorAll('#viewButtons button[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 document.getElementById('dimsToggle').addEventListener('change', (e) => {
   labelRenderer.domElement.style.display = e.target.checked ? '' : 'none';
 });
@@ -263,23 +345,30 @@ function resize() {
   const w = viewport.clientWidth;
   const hgt = viewport.clientHeight;
   renderer.setSize(w, hgt);
+  composer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  composer.setSize(w, hgt);
   labelRenderer.setSize(w, hgt);
   persp.aspect = w / Math.max(1, hgt);
   persp.updateProjectionMatrix();
   updateOrthoFrustum();
+  if (photo.active) photo.tracer?.updateCamera();
 }
 new ResizeObserver(resize).observe(viewport);
 
 editor.load(state.items);
 rebuildRoom({ refit: true });
 ui.renderRoom(state.room, state.lighting);
+syncPasses();
 resize();
 
 renderer.setAnimationLoop(() => {
   controls3d.update();
   controlsPlan.update();
+  if (photo.active) {
+    photo.render();
+    return;
+  }
   updateWallFade();
-  const cam = activeCamera();
-  renderer.render(scene, cam);
-  labelRenderer.render(scene, cam);
+  composer.render();
+  labelRenderer.render(scene, activeCamera());
 });

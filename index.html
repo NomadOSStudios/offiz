@@ -14,6 +14,7 @@
           <button data-view="3d" class="active">3D</button>
           <button data-view="plan">Plan</button>
           <button data-view="door">From the door</button>
+          <button id="photoBtn" title="Path-traced render of the current view">Photo</button>
         </div>
         <div class="group">
           <label class="toggle"><input type="checkbox" id="dimsToggle" checked /> Dimensions</label>
@@ -29,7 +30,13 @@
         </div>
       </header>
       <aside id="catalog"></aside>
-      <main id="viewport"></main>
+      <main id="viewport">
+        <div id="photoBar" hidden>
+          <span id="photoStatus"></span>
+          <button id="photoSave" class="small">Save PNG</button>
+          <button id="photoExit" class="small">Back to editor</button>
+        </div>
+      </main>
       <aside id="inspector"></aside>
     </div>
     <script type="module" src="/src/main.js"></script>

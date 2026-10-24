@@ -15,10 +15,12 @@ Then open http://localhost:5173.
 ## The room
 
 The shape comes from the measured sketch: 6.70 m × 9.50 m with a 3.50 m ×
-2.30 m kitchen in the bottom-right corner, leaving a 3.20 m wide wall for the
-entrance door. The whole top wall is a window from 1.50 m up. Every one of
-those numbers is editable in the Room panel on the right, including door
-positions and the window sill.
+2.30 m notch in the bottom-right corner, leaving a 3.20 m wide wall for the
+entrance door. The notch is split left/right: kitchen next to the office
+(door from the office), small bathroom in the far corner (door from the
+kitchen). The whole top
+wall is a window from 1.50 m up. Every one of those numbers is editable in
+the Room panel on the right, including door positions and the window sill.
 
 Plan orientation: x runs along the window wall, z runs from the window (z = 0)
 towards the entrance (z = 9.5).
@@ -32,6 +34,12 @@ towards the entrance (z = 9.5).
 - **Floors**: pick a finish for the office and kitchen separately.
 - **Daylight**: drag the time slider to see where the sun falls through the window.
 - **Views**: 3D orbit (left-drag rotates, right-drag pans, scroll zooms), Plan (top-down), From the door (eye level).
+- **Photo**: path-traces the current view on the GPU (three-gpu-pathtracer). It keeps
+  refining while you wait; give an interior view 30–60 s, then Save PNG. Dragging
+  restarts the render. Walls faded out in the dollhouse view are removed for the photo.
+
+The real-time view uses an environment map, GTAO ambient occlusion, a light bloom
+and SMAA. The office floor defaults to the grey carpet-tile mix going into the real room.
 
 ## Code
 

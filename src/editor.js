@@ -17,6 +17,7 @@ export class Editor {
     this.onSelect = onSelect;
     this.onWallSelect = onWallSelect;
     this.snap = true;
+    this.enabled = true;
 
     this.itemsGroup = new THREE.Group();
     scene.add(this.itemsGroup);
@@ -194,11 +195,15 @@ export class Editor {
     ].map(([x, z]) => [d.x + x * c + z * s, d.z - x * s + z * c]);
   }
 
+  rooms() {
+    return Object.values(this.room.polygons).filter(Boolean);
+  }
+
+  // Fully inside one room (office, kitchen or bathroom) — never straddling a wall.
   isInside(d, def) {
     if (!this.room) return true;
     const cs = this.corners(d, def);
-    const { office, kitchen } = this.room.polygons;
-    return cs.every((p) => pointInPolygon(p, office)) || cs.every((p) => pointInPolygon(p, kitchen));
+    return this.rooms().some((poly) => cs.every((p) => pointInPolygon(p, poly)));
   }
 
   // Pull a point back into the envelope so spawned items are always reachable.
@@ -217,7 +222,7 @@ export class Editor {
   snapToWall(d, def) {
     if (!this.room) return;
     let best = null;
-    for (const poly of [this.room.polygons.office, this.room.polygons.kitchen]) {
+    for (const poly of this.rooms()) {
       for (let i = 0; i < poly.length; i++) {
         const a = poly[i];
         const b = poly[(i + 1) % poly.length];
@@ -274,7 +279,7 @@ export class Editor {
   }
 
   onDown(e) {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || !this.enabled) return;
     this.setPointer(e);
     this.downPos = [e.clientX, e.clientY];
     const g = this.pickItem();
@@ -346,7 +351,7 @@ export class Editor {
   onKey(e) {
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-    if (!this.selected) return;
+    if (!this.selected || !this.enabled) return;
     const d = this.selected.userData.item;
     const def = this.selected.userData.def;
     const step = e.shiftKey ? 0.25 : SNAP;

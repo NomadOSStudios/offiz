@@ -16,11 +16,14 @@ export const defaultRoom = {
   window: { sill: 1.5, top: 2.6 },
   // Entrance door on the bottom wall, measured from the left corner.
   entranceDoor: { from: 1.2, width: 0.9, height: 2.1 },
-  // Kitchen door on the partition, measured from the inner corner (top of notch).
+  // Kitchen door on the side partition, measured from the inner corner (top of notch).
   kitchenDoor: { from: 1.0, width: 0.8, height: 2.1 },
+  // Bathroom is the far-right part of the notch, full depth. Its door is on the
+  // kitchen/bathroom wall, measured from the long partition. Width 0 = none.
+  bathroom: { width: 1.75, door: { from: 0.6, width: 0.7, height: 2.1 }, floor: 'tileDark' },
   wallColor: '#f2efe8',
   wallColors: {},
-  floor: 'oak',
+  floor: 'carpetTiles',
   kitchenFloor: 'tile',
 };
 
@@ -38,9 +41,22 @@ export function starterItems() {
     { id: uid(), type: 'sofa', x: 6.25, z: 4.6, rot: -90 },
     { id: uid(), type: 'coffeeTable', x: 5.3, z: 4.6, rot: 0 },
     { id: uid(), type: 'rug', x: 5.3, z: 4.6, rot: 90 },
-    { id: uid(), type: 'counter', x: 5.0, z: 9.2, rot: 180 },
-    { id: uid(), type: 'fridge', x: 6.38, z: 9.17, rot: 180 },
+    { id: uid(), type: 'counterShort', x: 4.1, z: 9.2, rot: 180 },
+    { id: uid(), type: 'fridge', x: 4.55, z: 7.65, rot: 0 },
+    { id: uid(), type: 'toilet', x: 6.35, z: 8.9, rot: -90 },
+    { id: uid(), type: 'basin', x: 5.85, z: 7.5, rot: 0 },
+    { id: uid(), type: 'mirror', x: 5.85, z: 7.325, rot: 0, elevation: 1.25 },
   ];
+}
+
+// Saved rooms from older versions get any new settings filled in.
+function mergeRoom(saved = {}) {
+  const d = structuredClone(defaultRoom);
+  const out = { ...d, ...saved };
+  for (const k of ['notch', 'window', 'entranceDoor', 'kitchenDoor', 'bathroom']) out[k] = { ...d[k], ...(saved[k] || {}) };
+  out.bathroom.door = { ...d.bathroom.door, ...(saved.bathroom?.door || {}) };
+  out.wallColors = { ...(saved.wallColors || {}) };
+  return out;
 }
 
 export function defaultState() {
@@ -56,8 +72,7 @@ export function loadState() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return defaultState();
     const s = JSON.parse(raw);
-    // Fill in anything a newer version added.
-    s.room = { ...structuredClone(defaultRoom), ...s.room };
+    s.room = mergeRoom(s.room);
     s.lighting = { ...defaultState().lighting, ...s.lighting };
     s.items ??= [];
     return s;
@@ -87,7 +102,7 @@ export function importState(file) {
   return file.text().then((txt) => {
     const s = JSON.parse(txt);
     if (!s || typeof s !== 'object' || !s.room) throw new Error('Not an Offiz file');
-    s.room = { ...structuredClone(defaultRoom), ...s.room };
+    s.room = mergeRoom(s.room);
     s.lighting = { ...defaultState().lighting, ...s.lighting };
     s.items ??= [];
     return s;

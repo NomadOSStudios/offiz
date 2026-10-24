@@ -9,15 +9,24 @@ export const WALL_NAMES = {
   east: 'Right wall',
   south: 'Entrance wall',
   west: 'Left wall',
-  kitchenNorth: 'Kitchen partition (long)',
-  kitchenWest: 'Kitchen partition (door)',
+  kitchenNorth: 'Long partition',
+  kitchenWest: 'Side partition (kitchen door)',
+  bathWall: 'Kitchen / bathroom wall',
 };
+
+// Interior partitions are this thick and sit inside the notch, so every
+// polygon below is a room's actual inner faces.
+export const PARTITION = 0.1;
 
 export function roomPolygons(cfg) {
   const W = cfg.width;
   const L = cfg.length;
+  const pt = PARTITION;
   const nw = Math.min(cfg.notch.width, W - 0.5);
   const nd = Math.min(cfg.notch.depth, L - 0.5);
+  // The bathroom is the far-right part of the notch, full depth; 0 = none.
+  const bwRaw = Math.max(0, Math.min(cfg.bathroom?.width ?? 0, nw - 0.8));
+  const bw = bwRaw > 0.3 ? bwRaw : 0;
   const office = [
     [0, 0],
     [W, 0],
@@ -26,13 +35,27 @@ export function roomPolygons(cfg) {
     [W - nw, L],
     [0, L],
   ];
+  const kx = bw ? W - bw - pt / 2 : W;
   const kitchen = [
-    [W - nw, L - nd],
-    [W, L - nd],
-    [W, L],
-    [W - nw, L],
+    [W - nw + pt, L - nd + pt],
+    [kx, L - nd + pt],
+    [kx, L],
+    [W - nw + pt, L],
   ];
-  return { office, kitchen, W, L, nw, nd };
+  const bathroom = bw
+    ? [
+        [W - bw + pt / 2, L - nd + pt],
+        [W, L - nd + pt],
+        [W, L],
+        [W - bw + pt / 2, L],
+      ]
+    : null;
+  return { office, kitchen, bathroom, W, L, nw, nd, bw };
+}
+
+export function centroid(poly) {
+  const n = poly.length;
+  return [poly.reduce((s, p) => s + p[0], 0) / n, poly.reduce((s, p) => s + p[1], 0) / n];
 }
 
 export function pointInPolygon([x, z], poly) {
@@ -107,10 +130,9 @@ function buildWall({ a, b, height, thickness, offset = 0, openings = [], materia
     const [cx, cz] = at((o.from + o.to) / 2);
     const h = o.top - o.bottom;
     if (o.kind === 'window') {
-      const glass = new THREE.Mesh(
-        new THREE.BoxGeometry(w, h, 0.02),
-        new THREE.MeshPhysicalMaterial({ color: '#bcd8f0', transparent: true, opacity: 0.22, roughness: 0.05, metalness: 0 })
-      );
+      const glassMat = new THREE.MeshPhysicalMaterial({ color: '#bcd8f0', transparent: true, opacity: 0.22, roughness: 0.05, metalness: 0 });
+      glassMat.userData.glass = true; // photo mode swaps this for real glass
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.02), glassMat);
       glass.position.set(cx, (o.top + o.bottom) / 2, cz);
       glass.rotation.y = rotY;
       g.add(glass);
@@ -156,12 +178,16 @@ function buildWall({ a, b, height, thickness, offset = 0, openings = [], materia
       door.rotation.y = rotY;
       g.add(door);
 
-      // Swing arc on the floor (plan symbol), hinge at the "from" end, opening inward.
-      const [hx, hz] = at(o.from);
+      // Swing arc on the floor (plan symbol), opening inward. Hinge at the
+      // "from" end unless the opening says hinge: 'end'.
+      const hingeEnd = o.hinge === 'end';
+      const [hx, hz] = at(hingeEnd ? o.to : o.from);
+      const sx = hingeEnd ? -ux : ux;
+      const sz = hingeEnd ? -uz : uz;
       const pts = [];
       for (let i = 0; i <= 16; i++) {
         const th = (i / 16) * (Math.PI / 2);
-        pts.push(new THREE.Vector3(hx + (ux * Math.cos(th) - nx * Math.sin(th)) * w, 0.01, hz + (uz * Math.cos(th) - nz * Math.sin(th)) * w));
+        pts.push(new THREE.Vector3(hx + (sx * Math.cos(th) - nx * Math.sin(th)) * w, 0.01, hz + (sz * Math.cos(th) - nz * Math.sin(th)) * w));
       }
       pts.push(new THREE.Vector3(hx, 0.01, hz));
       const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#8a8f99' }));
@@ -192,6 +218,11 @@ function ceilingMesh(poly, h) {
   return m;
 }
 
+function centroidXYZ(poly) {
+  const [x, z] = centroid(poly);
+  return [x, 0.02, z];
+}
+
 function label(text, x, y, z, cls = 'dim') {
   const el = document.createElement('div');
   el.className = 'label ' + cls;
@@ -202,7 +233,7 @@ function label(text, x, y, z, cls = 'dim') {
 }
 
 export function buildRoom(cfg) {
-  const { office, kitchen, W, L, nw, nd } = roomPolygons(cfg);
+  const { office, kitchen, bathroom, W, L, nw, nd, bw } = roomPolygons(cfg);
   const H = cfg.ceiling;
   const t = cfg.wallThickness;
   const group = new THREE.Group();
@@ -246,19 +277,36 @@ export function buildRoom(cfg) {
 
   // Kitchen partitions (centred on the line). Direction follows the office
   // polygon so "outward" is the kitchen side.
-  const pt = 0.1;
-  addWall({ id: 'kitchenNorth', a: [W, L - nd], b: [W - nw, L - nd], thickness: pt, extendEnd: pt / 2 });
+  // Partitions sit inside the notch (offset towards the kitchen), so the
+  // office polygon's edges are their faces.
+  const pt = PARTITION;
+  const bath = cfg.bathroom;
+  addWall({ id: 'kitchenNorth', a: [W, L - nd], b: [W - nw, L - nd], thickness: pt, offset: pt / 2 });
   addWall({
     id: 'kitchenWest',
-    a: [W - nw, L - nd + pt / 2],
+    a: [W - nw, L - nd + pt],
     b: [W - nw, L],
     thickness: pt,
-    openings: [{ kind: 'door', from: kd.from - pt / 2, to: kd.from - pt / 2 + kd.width, bottom: 0, top: kd.height, color: '#c9c3b6' }],
+    offset: pt / 2,
+    // Measured from the inner corner; this wall starts one partition further in.
+    openings: [{ kind: 'door', from: kd.from - pt, to: kd.from - pt + kd.width, bottom: 0, top: kd.height, color: '#c9c3b6' }],
   });
+  if (bathroom) {
+    // Kitchen/bathroom wall, centred on x = W - bw. Door measured from the long
+    // partition, hinged at its far end, swinging into the kitchen.
+    addWall({
+      id: 'bathWall',
+      a: [W - bw, L - nd + pt],
+      b: [W - bw, L],
+      thickness: pt,
+      openings: [
+        { kind: 'door', from: bath.door.from, to: bath.door.from + bath.door.width, bottom: 0, top: bath.door.height, color: '#c9c3b6', hinge: 'end' },
+      ],
+    });
+  }
 
-  const officeFloor = floorMesh(office, cfg.floor);
-  const kitchenFloor = floorMesh(kitchen, cfg.kitchenFloor);
-  group.add(officeFloor, kitchenFloor);
+  group.add(floorMesh(office, cfg.floor), floorMesh(kitchen, cfg.kitchenFloor));
+  if (bathroom) group.add(floorMesh(bathroom, bath.floor));
 
   // Slab under everything so nothing shows through from below. Its top sits
   // 2 cm below the floor planes so the two never z-fight.
@@ -272,6 +320,7 @@ export function buildRoom(cfg) {
 
   const ceiling = new THREE.Group();
   ceiling.add(ceilingMesh(office, H), ceilingMesh(kitchen, H));
+  if (bathroom) ceiling.add(ceilingMesh(bathroom, H));
   ceiling.visible = false;
   group.add(ceiling);
 
@@ -284,13 +333,14 @@ export function buildRoom(cfg) {
     label(f(nd), W + 0.65, 0.02, L - nd / 2),
     label(f(nw), W - nw / 2, 0.02, L - nd - 0.35),
     label(`Office · ${polygonArea(office).toFixed(1)} m²`, W / 2, 0.02, (L - nd) / 2 + 0.6, 'name'),
-    label(`Kitchen · ${polygonArea(kitchen).toFixed(1)} m²`, W - nw / 2, 0.02, L - nd / 2, 'name'),
+    label(`Kitchen · ${polygonArea(kitchen).toFixed(1)} m²`, ...centroidXYZ(kitchen), 'name'),
     label('Window', W / 2, 0.02, 0.35, 'name'),
     label('Door', ed.from + ed.width / 2, 0.02, L - 0.3, 'name')
   );
+  if (bathroom) labels.add(label(`Bathroom · ${polygonArea(bathroom).toFixed(1)} m²`, ...centroidXYZ(bathroom), 'name'));
   group.add(labels);
 
-  return { group, walls, ceiling, labels, polygons: { office, kitchen }, W, L };
+  return { group, walls, ceiling, labels, polygons: { office, kitchen, bathroom }, W, L };
 }
 
 export function disposeGroup(g) {

@@ -351,6 +351,36 @@ function fridge({ w, d, h }, c) {
   return done(g, [body]);
 }
 
+function toilet(_, c) {
+  const g = new THREE.Group();
+  const white = mat(c, { roughness: 0.3 });
+  g.add(Cy(0.17, 0.13, 0.38, white, 0, 0, 0.08, 24));
+  g.add(B(0.36, 0.05, 0.46, white, 0, 0.38, 0.06));
+  g.add(B(0.38, 0.4, 0.17, white, 0, 0.4, -0.24));
+  g.add(B(0.1, 0.02, 0.03, chrome(), 0.1, 0.8, -0.24));
+  return done(g, [white]);
+}
+
+function basin({ w, d, h }, c) {
+  const g = new THREE.Group();
+  const body = mat(c);
+  const white = mat('#f6f7f7', { roughness: 0.3 });
+  g.add(B(w - 0.04, h - 0.15, d - 0.04, body, 0, 0, 0));
+  g.add(B(w, 0.04, d, white, 0, h - 0.15, 0));
+  g.add(B(w * 0.7, 0.015, d * 0.65, mat('#d7dde3', { roughness: 0.3 }), 0, h - 0.11, 0.01));
+  g.add(Cy(0.012, 0.012, 0.1, chrome(), 0, h - 0.11, -d / 2 + 0.06, 10));
+  g.add(B(0.02, 0.02, 0.1, chrome(), 0, h - 0.02, -d / 2 + 0.1));
+  return done(g, [body]);
+}
+
+function mirror({ w, d, h }, c) {
+  const g = new THREE.Group();
+  const frame = mat(c, { roughness: 0.5, metalness: 0.4 });
+  g.add(B(w + 0.03, h + 0.03, 0.02, frame, 0, -0.015, -d / 2 + 0.01));
+  g.add(B(w, h, 0.01, mat('#cfe0ea', { roughness: 0.05, metalness: 0.9 }), 0, 0, -d / 2 + 0.025));
+  return done(g, [frame]);
+}
+
 function stool({ w, h }, c) {
   const g = new THREE.Group();
   const seat = mat(c);
@@ -404,6 +434,11 @@ export const CATALOG = [
   { type: 'fridge', name: 'Fridge', size: '60 × 65 × 180', cat: 'Kitchen', w: 0.6, d: 0.65, h: 1.8, color: '#d4d4d4', build: fridge },
   { type: 'kitchenTable', name: 'Bistro table', size: '70 × 70', cat: 'Kitchen', w: 0.7, d: 0.7, h: 0.75, color: '#e8e2d6', build: table },
   { type: 'kitchenCabinet', name: 'Kitchen cabinet', size: '80 × 40 × 200', cat: 'Kitchen', w: 0.8, d: 0.4, h: 2.0, color: '#e5e5e5', build: cabinet },
+
+  { type: 'toilet', name: 'Toilet', size: '38 × 65', cat: 'Bathroom', w: 0.38, d: 0.65, h: 0.82, color: '#f6f7f7', build: toilet, fixedSize: true },
+  { type: 'basin', name: 'Basin cabinet', size: '50 × 40', cat: 'Bathroom', w: 0.5, d: 0.4, h: 0.95, color: '#e8e4dc', build: basin },
+  { type: 'mirror', name: 'Mirror', size: '50 × 70', cat: 'Bathroom', w: 0.5, d: 0.04, h: 0.7, color: '#8a8f99', elevation: 1.25, wallMounted: true, build: mirror },
+  { type: 'bathCabinet', name: 'Tall cabinet', size: '40 × 35 × 180', cat: 'Bathroom', w: 0.4, d: 0.35, h: 1.8, color: '#e8e4dc', build: cabinet },
 ];
 
 export const CATALOG_BY_TYPE = Object.fromEntries(CATALOG.map((d) => [d.type, d]));
