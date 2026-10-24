@@ -25,7 +25,8 @@ viewport.appendChild(labelRenderer.domElement);
 
 const scene = new THREE.Scene();
 
-const persp = new THREE.PerspectiveCamera(50, 1, 0.05, 200);
+// Near plane kept at 0.1 for depth precision; the eye-level view never needs closer.
+const persp = new THREE.PerspectiveCamera(50, 1, 0.1, 120);
 const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 ortho.up.set(0, 0, -1);
 

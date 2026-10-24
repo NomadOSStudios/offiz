@@ -76,6 +76,8 @@ function buildWall({ a, b, height, thickness, offset = 0, openings = [], materia
 
   const piece = (s, e, y0, y1) => {
     if (e - s <= 0.001 || y1 - y0 <= 0.001) return;
+    // Floor-standing pieces sink into the slab so no seam shows at the base.
+    if (y0 === 0) y0 = -0.05;
     const m = new THREE.Mesh(new THREE.BoxGeometry(e - s, y1 - y0, thickness), material);
     const [px, pz] = at((s + e) / 2);
     m.position.set(px, (y0 + y1) / 2, pz);
@@ -258,12 +260,13 @@ export function buildRoom(cfg) {
   const kitchenFloor = floorMesh(kitchen, cfg.kitchenFloor);
   group.add(officeFloor, kitchenFloor);
 
-  // Slab under everything so nothing shows through from below.
+  // Slab under everything so nothing shows through from below. Its top sits
+  // 2 cm below the floor planes so the two never z-fight.
   const slab = new THREE.Mesh(
     new THREE.BoxGeometry(W + 2 * t, 0.2, L + 2 * t),
     new THREE.MeshStandardMaterial({ color: '#8d8a82', roughness: 1 })
   );
-  slab.position.set(W / 2, -0.1, L / 2);
+  slab.position.set(W / 2, -0.12, L / 2);
   slab.receiveShadow = true;
   group.add(slab);
 

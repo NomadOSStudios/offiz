@@ -1,5 +1,5 @@
 // Catalog (left) and inspector (right) panels. Plain DOM, no framework.
-import { CATALOG, CATEGORIES } from './catalog.js';
+import { CATALOG, CATEGORIES, sizeLabel } from './catalog.js';
 import { FLOORS } from './textures.js';
 import { WALL_NAMES } from './room.js';
 
@@ -84,7 +84,18 @@ export function createUI(h) {
       selSec.append(el('div', { class: 'empty' }, ['Nothing selected. Click an item to select it, drag it to move. Add more from the left.']));
       return;
     }
-    selSec.append(el('div', {}, [el('strong', {}, [def.name]), ` · ${def.size} cm`]));
+    selSec.append(el('div', {}, [el('strong', {}, [def.name]), ` · ${sizeLabel(def)}`]));
+    if (!def.fixedSize) {
+      // Sizes are shown in cm; the item is rebuilt with the new dimensions.
+      const cm = (key) => num(def[key] * 100, { step: 5, min: 10 }, (v) => h.onItemChange({ [key]: v / 100 }));
+      selSec.append(field('Width cm', cm('w')), field('Depth cm', cm('d')), field('Height cm', cm('h')));
+      if (item.w != null || item.d != null || item.h != null) {
+        const reset = el('button', { class: 'small' });
+        reset.textContent = 'Reset to catalog size';
+        reset.addEventListener('click', () => h.onItemChange({ w: null, d: null, h: null }));
+        selSec.append(el('div', { class: 'row' }, [reset]));
+      }
+    }
     selSec.append(field('Position x', num(item.x, { step: 0.05 }, (v) => h.onItemChange({ x: v }))));
     selSec.append(field('Position z', num(item.z, { step: 0.05 }, (v) => h.onItemChange({ z: v }))));
     selSec.append(field('Rotation °', num(item.rot || 0, { step: 15, min: -180, max: 180 }, (v) => h.onItemChange({ rot: v }))));

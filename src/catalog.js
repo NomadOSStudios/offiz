@@ -109,6 +109,30 @@ function monitor({ w }, c) {
   return done(g, [body]);
 }
 
+// All-in-one PC: foot plate, tilted neck, thin panel with an aluminium chin.
+function allInOne({ w, d, h }, c) {
+  const g = new THREE.Group();
+  const alu = mat(c, { roughness: 0.45, metalness: 0.5 });
+  const screen = mat('#101826', { roughness: 0.25, metalness: 0.2, emissive: '#1b3350', emissiveIntensity: 0.7 });
+  const panelH = h - 0.1;
+  g.add(B(w * 0.32, 0.006, d, alu, 0, 0, 0));
+  const neck = B(0.17, 0.22, 0.012, alu, 0, 0.006, -0.02);
+  neck.rotation.x = 0.3;
+  g.add(neck);
+  g.add(B(w, panelH, 0.012, alu, 0, 0.1, 0.02));
+  g.add(B(w - 0.03, panelH - 0.09, 0.004, screen, 0, 0.175, 0.028));
+  return done(g, [alu]);
+}
+
+function keyboard({ w, d }, c) {
+  const g = new THREE.Group();
+  const body = mat(c, { roughness: 0.6 });
+  g.add(B(w - 0.1, 0.012, d, body, -0.05, 0, 0));
+  g.add(B(w - 0.12, 0.004, d - 0.02, mat(shade(c, -0.25)), -0.05, 0.012, 0));
+  g.add(B(0.06, 0.03, 0.11, body, w / 2 - 0.03, 0, 0));
+  return done(g, [body]);
+}
+
 function officeChair(_, c) {
   const g = new THREE.Group();
   const fab = mat(c, { roughness: 1 });
@@ -346,10 +370,12 @@ export const CATALOG = [
   { type: 'meetingTable', name: 'Meeting table', size: '180 × 90', cat: 'Work', w: 1.8, d: 0.9, h: 0.75, color: '#f0ece4', build: table },
   { type: 'roundTable', name: 'Round table', size: 'Ø 120', cat: 'Work', w: 1.2, d: 1.2, h: 0.75, color: '#f0ece4', build: roundTable },
   { type: 'monitor', name: 'Monitor', size: '27"', cat: 'Work', w: 0.62, d: 0.2, h: 0.45, color: '#2a2d31', elevation: 0.75, build: monitor, stackable: true },
+  { type: 'allInOne', name: 'All-in-one PC', size: '27"', cat: 'Work', w: 0.65, d: 0.2, h: 0.52, color: '#c9cbd0', elevation: 0.75, build: allInOne, stackable: true },
+  { type: 'keyboard', name: 'Keyboard & mouse', size: '55 × 15', cat: 'Work', w: 0.55, d: 0.15, h: 0.03, color: '#d6d6d4', elevation: 0.75, build: keyboard, stackable: true },
   { type: 'partition', name: 'Screen', size: '140 × 150', cat: 'Work', w: 1.4, d: 0.05, h: 1.5, color: '#9aa5b1', build: partition },
 
-  { type: 'officeChair', name: 'Office chair', size: '65 × 65', cat: 'Seating', w: 0.65, d: 0.65, h: 1.1, color: '#333639', build: officeChair },
-  { type: 'visitorChair', name: 'Visitor chair', size: '50 × 55', cat: 'Seating', w: 0.5, d: 0.55, h: 0.9, color: '#4b5563', build: visitorChair },
+  { type: 'officeChair', name: 'Office chair', size: '65 × 65', cat: 'Seating', w: 0.65, d: 0.65, h: 1.1, color: '#333639', build: officeChair, fixedSize: true },
+  { type: 'visitorChair', name: 'Visitor chair', size: '50 × 55', cat: 'Seating', w: 0.5, d: 0.55, h: 0.9, color: '#4b5563', build: visitorChair, fixedSize: true },
   { type: 'sofa', name: 'Sofa', size: '160 × 85', cat: 'Seating', w: 1.6, d: 0.85, h: 0.85, color: '#6b7a8f', build: sofa },
   { type: 'sofa3', name: 'Sofa, 3-seat', size: '220 × 90', cat: 'Seating', w: 2.2, d: 0.9, h: 0.85, color: '#6b7a8f', build: sofa },
   { type: 'armchair', name: 'Armchair', size: '85 × 85', cat: 'Seating', w: 0.85, d: 0.85, h: 0.85, color: '#8a6f5a', build: sofa },
@@ -382,6 +408,20 @@ export const CATALOG = [
 
 export const CATALOG_BY_TYPE = Object.fromEntries(CATALOG.map((d) => [d.type, d]));
 export const CATEGORIES = [...new Set(CATALOG.map((d) => d.cat))];
+
+export const MIN_SIZE = 0.1;
+
+// The catalog entry with any per-item size overrides applied. Builders read
+// w/d/h from this, so a resized item is just rebuilt with different numbers.
+export function itemDef(def, data) {
+  const pick = (k) => (Number.isFinite(data[k]) ? Math.max(MIN_SIZE, data[k]) : def[k]);
+  return { ...def, w: pick('w'), d: pick('d'), h: pick('h') };
+}
+
+export function sizeLabel(def) {
+  const cm = (v) => Math.round(v * 100);
+  return `${cm(def.w)} × ${cm(def.d)} × ${cm(def.h)} cm`;
+}
 
 export function buildItem(def, color) {
   const g = def.build(def, color || def.color);

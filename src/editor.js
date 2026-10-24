@@ -1,6 +1,6 @@
 // Selection, dragging and keyboard editing of furniture items.
 import * as THREE from 'three';
-import { buildItem, CATALOG_BY_TYPE } from './catalog.js';
+import { buildItem, itemDef, CATALOG_BY_TYPE } from './catalog.js';
 import { pointInPolygon } from './room.js';
 
 const SNAP = 0.05;
@@ -42,9 +42,10 @@ export class Editor {
   // ---- items -------------------------------------------------------------
 
   addItem(data) {
-    const def = CATALOG_BY_TYPE[data.type];
-    if (!def) return null;
-    if (data.elevation == null && def.elevation != null) data.elevation = def.elevation;
+    const base = CATALOG_BY_TYPE[data.type];
+    if (!base) return null;
+    if (data.elevation == null && base.elevation != null) data.elevation = base.elevation;
+    const def = itemDef(base, data);
     const g = buildItem(def, data.color);
     g.userData.item = data;
     g.userData.def = def;
@@ -113,14 +114,22 @@ export class Editor {
     if (!this.selected) return;
     const g = this.selected;
     const d = g.userData.item;
-    const def = g.userData.def;
-    const needsRebuild = patch.color != null && patch.color !== d.color;
+    let rebuild = patch.color != null && patch.color !== d.color;
+    // Size overrides: null clears one back to the catalog default.
+    for (const k of ['w', 'd', 'h']) {
+      if (!(k in patch)) continue;
+      if (patch[k] == null) delete d[k];
+      else d[k] = patch[k];
+      delete patch[k];
+      rebuild = true;
+    }
     Object.assign(d, patch);
-    if (def.wallMounted && (patch.x != null || patch.z != null)) this.snapToWall(d, def);
-    if (needsRebuild) this.rebuildItem(g);
+    const def = itemDef(CATALOG_BY_TYPE[d.type], d);
+    if (def.wallMounted && (patch.x != null || patch.z != null || rebuild)) this.snapToWall(d, def);
+    if (rebuild) this.rebuildItem(g);
     else this.applyTransform(g);
     this.onChange();
-    this.onSelect(this.selected?.userData.item ?? null, def);
+    this.onSelect(this.selected?.userData.item ?? null, this.selected?.userData.def ?? def);
   }
 
   rotateSelected(deg) {
