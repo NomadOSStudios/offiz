@@ -3,42 +3,117 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Offiz — office planner</title>
+    <title>Offiz — office studio</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app">
       <header id="topbar">
-        <div class="brand">Offiz</div>
-        <div class="group" id="viewButtons">
-          <button data-view="3d" class="active">3D</button>
-          <button data-view="plan">Plan</button>
-          <button data-view="door">From the door</button>
-          <button id="photoBtn" title="Path-traced render of the current view">Photo</button>
+        <div class="brand">
+          <span class="brand-icon">O</span> Offiz
+          <span class="brand-sub">OFFICE STUDIO</span>
         </div>
-        <div class="group">
-          <label class="toggle"><input type="checkbox" id="dimsToggle" checked /> Dimensions</label>
-          <label class="toggle"><input type="checkbox" id="ceilingToggle" /> Ceiling</label>
-          <label class="toggle"><input type="checkbox" id="snapToggle" checked /> Snap 5 cm</label>
+        <div class="group history">
+          <button id="undoBtn" title="Undo (⌘/Ctrl Z)" aria-label="Undo">
+            ↶</button
+          ><button id="redoBtn" title="Redo (⌘/Ctrl Shift Z)" aria-label="Redo">
+            ↷
+          </button>
         </div>
+        <button id="layoutsBtn">
+          Layouts <span id="layoutCount" class="badge">0</span>
+        </button>
         <div class="group right">
-          <span id="saveStatus" class="muted"></span>
-          <button id="exportBtn">Export</button>
-          <button id="importBtn">Import</button>
-          <input type="file" id="importFile" accept="application/json" hidden />
-          <button id="resetBtn" class="danger">Reset</button>
+          <span id="saveStatus" role="status">Saved locally</span
+          ><button id="camerasBtn">Cameras</button
+          ><button id="exportBtn" class="primary">Export ↗</button
+          ><button id="moreBtn" aria-label="More file actions">•••</button>
         </div>
       </header>
-      <aside id="catalog"></aside>
-      <main id="viewport">
-        <div id="photoBar" hidden>
-          <span id="photoStatus"></span>
-          <button id="photoSave" class="small">Save PNG</button>
-          <button id="photoExit" class="small">Back to editor</button>
+      <div id="toolbar">
+        <button
+          id="catalogToggle"
+          title="Toggle furniture library"
+          aria-expanded="true"
+        >
+          ☷ <span>Library</span>
+        </button>
+        <div class="group segmented" id="viewButtons">
+          <button data-view="3d" class="active">3D studio</button
+          ><button data-view="plan">Plan</button
+          ><button data-view="door">From door</button
+          ><button data-view="walk">Walkthrough</button>
         </div>
+        <div class="group view-options">
+          <label class="toggle"
+            ><input type="checkbox" id="dimsToggle" checked /> Dimensions</label
+          ><label class="toggle"
+            ><input type="checkbox" id="snapToggle" checked /> Snap</label
+          ><select id="wallMode" aria-label="Wall display">
+            <option value="cutaway">Cutaway walls</option>
+            <option value="fade">Fade walls</option>
+            <option value="solid">Solid walls</option></select
+          ><label class="toggle"
+            ><input type="checkbox" id="ceilingToggle" /> Ceiling</label
+          >
+        </div>
+        <button id="fitBtn" title="Fit room in view">Fit</button
+        ><button id="photoBtn">Photo</button
+        ><button
+          id="inspectorToggle"
+          title="Toggle properties"
+          aria-expanded="true"
+        >
+          ⚙ <span>Properties</span>
+        </button>
+      </div>
+      <aside id="catalog" aria-label="Furniture library"></aside>
+      <main id="viewport" aria-label="Office design canvas">
+        <svg
+          id="planCanvas"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-label="Editable floor plan"
+          hidden
+        ></svg>
+        <div id="viewCaption">
+          <span class="eyebrow">YOUR SPACE, YOUR WAY</span
+          ><strong id="viewTitle">A place to do your best work.</strong
+          ><span id="viewSubtitle"
+            >Orbit to explore · Select to make it yours</span
+          >
+        </div>
+        <div id="photoBar" hidden>
+          <span id="photoStatus"></span><button id="photoSave">Save PNG</button
+          ><button id="photoExit">Back to editor</button>
+        </div>
+        <div id="walkHint" hidden>
+          Drag to look · W A S D to walk · ↑ ↓ move · ← → turn · Shift to move
+          faster · Esc exits
+        </div>
+        <div id="message" role="status" aria-live="polite" hidden></div>
+        <div id="selectionBar" hidden></div>
       </main>
-      <aside id="inspector"></aside>
+      <aside id="inspector" aria-label="Properties"></aside>
+      <footer id="statusbar">
+        <span id="sceneStats"></span
+        ><button id="checksBtn">
+          <span id="checksStatus">Layout checks</span></button
+        ><span class="footer-help"
+          >Shift-click to select more · R rotate · ⌘Z undo</span
+        ><span class="local-dot">● Local workspace</span>
+      </footer>
     </div>
+    <dialog id="workspaceDialog">
+      <div class="dialog-head">
+        <div>
+          <span class="eyebrow">OFFIZ WORKSPACE</span>
+          <h2 id="dialogTitle"></h2>
+        </div>
+        <button id="dialogClose" aria-label="Close dialog">✕</button>
+      </div>
+      <div id="dialogBody"></div>
+    </dialog>
+    <input type="file" id="importFile" accept="application/json" hidden />
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

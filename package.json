@@ -2,12 +2,13 @@
   "name": "offiz",
   "private": true,
   "version": "0.1.0",
-  "description": "3D planner for Emad's new office space",
+  "description": "Local-first 3D office planner: measure a room, arrange furniture, pick finishes, and path-trace a photo of it. Vite + Three.js.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "three": "^0.186.1",
@@ -15,5 +16,11 @@
   },
   "devDependencies": {
     "vite": "^8.3.5"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NomadOSStudios/offiz.git"
+  },
+  "homepage": "https://github.com/NomadOSStudios/offiz#readme"
 }

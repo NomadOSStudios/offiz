@@ -1,209 +1,604 @@
-// Catalog (left) and inspector (right) panels. Plain DOM, no framework.
-import { CATALOG, CATEGORIES, sizeLabel } from './catalog.js';
-import { FLOORS } from './textures.js';
-import { WALL_NAMES } from './room.js';
-
-const $ = (sel) => document.querySelector(sel);
-
-function el(tag, attrs = {}, children = []) {
+import { CATALOG, CATEGORIES, sizeLabel } from "./catalog.js";
+import { FLOORS, getFloorTexture } from "./textures.js";
+import { WALL_NAMES } from "./room.js";
+import { makeThumbnails } from "./thumbnails.js";
+export function el(tag, attrs = {}, children = []) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (v == null) continue;
-    if (k === 'class') e.className = v;
+    if (k === "class") e.className = v;
     else e.setAttribute(k, v);
   }
   for (const c of children) e.append(c);
   return e;
 }
-
+export function button(label, fn, cls = "") {
+  const b = el("button", { class: cls }, [label]);
+  b.addEventListener("click", fn);
+  return b;
+}
+let fieldId = 0;
 function field(label, input) {
-  return el('div', { class: 'field' }, [el('label', {}, [label]), input]);
+  const id = `field-${++fieldId}`;
+  input.id = id;
+  if (!input.getAttribute("aria-label"))
+    input.setAttribute("aria-label", label);
+  return el("div", { class: "field" }, [
+    el("label", { for: id }, [label]),
+    input,
+  ]);
 }
-
-function num(value, opts, onChange) {
-  const i = el('input', { type: 'number', step: opts.step ?? 0.05, min: opts.min, max: opts.max });
-  i.value = String(+value.toFixed(3));
-  i.addEventListener('change', () => {
-    const v = parseFloat(i.value);
-    if (Number.isFinite(v)) onChange(v);
+function num(v, { min = 0, max = 50, step = 0.05 } = {}, change) {
+  const input = el("input", { type: "number", min, max, step });
+  input.value = Number(v.toFixed(3));
+  input.addEventListener("change", () => {
+    if (input.value !== "" && input.checkValidity()) change(+input.value);
+    else {
+      input.reportValidity();
+      input.value = v;
+    }
   });
-  return i;
+  return input;
 }
-
-function color(value, onInput, onChange) {
-  const i = el('input', { type: 'color' });
-  i.value = value;
-  i.addEventListener('input', () => onInput?.(i.value));
-  i.addEventListener('change', () => onChange?.(i.value));
-  return i;
+function color(value, change) {
+  const input = el("input", { type: "color", value });
+  input.addEventListener("change", () => change(input.value));
+  return input;
 }
-
-function select(options, value, onChange) {
-  const s = el('select');
-  for (const [k, label] of options) {
-    const o = el('option', { value: k }, [label]);
-    if (k === value) o.selected = true;
-    s.append(o);
-  }
-  s.addEventListener('change', () => onChange(s.value));
-  return s;
+function section(title, children, open = true) {
+  const d = el("details", { class: "section", ...(open ? { open: "" } : {}) }, [
+    el("summary", {}, [title]),
+    ...children,
+  ]);
+  return d;
 }
-
-function fmtHour(h) {
-  const hh = Math.floor(h);
-  const mm = Math.round((h - hh) * 60);
-  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+export function openDialog(title, children) {
+  document.getElementById("dialogTitle").textContent = title;
+  document.getElementById("dialogBody").replaceChildren(...children);
+  const d = document.getElementById("workspaceDialog");
+  if (!d.open) d.showModal();
 }
-
+export const closeDialog = () =>
+  document.getElementById("workspaceDialog").close();
+export function nameForm(label, placeholder, submit, initial = "") {
+  const form = el("form", { class: "name-form" }),
+    input = el("input", {
+      type: "text",
+      placeholder,
+      required: "",
+      maxlength: 60,
+      "aria-label": label,
+    });
+  input.value = initial;
+  const b = el("button", { type: "submit", class: "primary" }, [label]);
+  form.append(input, b);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = input.value.trim();
+    if (v) submit(v, input);
+  });
+  return form;
+}
 export function createUI(h) {
-  // ---- catalog -----------------------------------------------------------
-  const catalog = $('#catalog');
-  for (const cat of CATEGORIES) {
-    catalog.append(el('h3', {}, [cat]));
-    const grid = el('div', { class: 'cat-grid' });
-    for (const def of CATALOG.filter((d) => d.cat === cat)) {
-      const b = el('button', { class: 'cat-item', title: `Add ${def.name} (${def.size} cm)` }, [def.name, el('small', {}, [def.size])]);
-      b.addEventListener('click', () => h.onSpawn(def));
-      grid.append(b);
-    }
-    catalog.append(grid);
-  }
-
-  // ---- inspector ---------------------------------------------------------
-  const insp = $('#inspector');
-  const selSec = el('div');
-  const wallSec = el('div');
-  const roomSec = el('div');
-  const lightSec = el('div');
-  const helpSec = el('div');
-  insp.append(selSec, wallSec, roomSec, lightSec, helpSec);
-
-  function showItem(item, def) {
-    selSec.replaceChildren(el('h3', {}, ['Selected']));
-    if (!item) {
-      selSec.append(el('div', { class: 'empty' }, ['Nothing selected. Click an item to select it, drag it to move. Add more from the left.']));
-      return;
-    }
-    selSec.append(el('div', {}, [el('strong', {}, [def.name]), ` · ${sizeLabel(def)}`]));
-    if (!def.fixedSize) {
-      // Sizes are shown in cm; the item is rebuilt with the new dimensions.
-      const cm = (key) => num(def[key] * 100, { step: 5, min: 10 }, (v) => h.onItemChange({ [key]: v / 100 }));
-      selSec.append(field('Width cm', cm('w')), field('Depth cm', cm('d')), field('Height cm', cm('h')));
-      if (item.w != null || item.d != null || item.h != null) {
-        const reset = el('button', { class: 'small' });
-        reset.textContent = 'Reset to catalog size';
-        reset.addEventListener('click', () => h.onItemChange({ w: null, d: null, h: null }));
-        selSec.append(el('div', { class: 'row' }, [reset]));
-      }
-    }
-    selSec.append(field('Position x', num(item.x, { step: 0.05 }, (v) => h.onItemChange({ x: v }))));
-    selSec.append(field('Position z', num(item.z, { step: 0.05 }, (v) => h.onItemChange({ z: v }))));
-    selSec.append(field('Rotation °', num(item.rot || 0, { step: 15, min: -180, max: 180 }, (v) => h.onItemChange({ rot: v }))));
-    selSec.append(field('Height off floor', num(item.elevation ?? 0, { step: 0.05, min: 0 }, (v) => h.onItemChange({ elevation: v }))));
-    selSec.append(
-      field(
-        'Colour',
-        color(item.color || def.color, (c) => h.onItemPreviewColor(c), (c) => h.onItemChange({ color: c }))
-      )
-    );
-    const row = el('div', { class: 'row' });
-    const btn = (label, fn, cls = '') => {
-      const b = el('button', { class: cls });
-      b.textContent = label;
-      b.addEventListener('click', fn);
-      return b;
-    };
-    row.append(btn('↺ 15°', () => h.onItemAction('rotateLeft')), btn('↻ 15°', () => h.onItemAction('rotateRight')));
-    const row2 = el('div', { class: 'row' });
-    row2.append(btn('Duplicate', () => h.onItemAction('duplicate')), btn('Delete', () => h.onItemAction('delete'), 'danger'));
-    selSec.append(row, row2);
-  }
-
-  function showWall(id, room) {
-    wallSec.replaceChildren();
-    if (!id) return;
-    wallSec.append(el('h3', {}, ['Wall']));
-    wallSec.append(el('div', {}, [el('span', { class: 'wall-chip' }, [WALL_NAMES[id] || id])]));
-    const current = room.wallColors[id] || room.wallColor;
-    wallSec.append(
-      field(
-        'Paint',
-        color(current, (c) => h.onWallColor(id, c), (c) => h.onWallColor(id, c))
-      )
-    );
-    const row = el('div', { class: 'row' });
-    const b = el('button', { class: 'small' });
-    b.textContent = 'Use room colour';
-    b.addEventListener('click', () => {
-      h.onWallColor(id, null);
-      showWall(id, room);
-    });
-    row.append(b);
-    wallSec.append(row);
-  }
-
-  function renderRoom(room, lighting) {
-    const r = (fn) => (v) => h.onRoomChange((room) => fn(room, v));
-    roomSec.replaceChildren(
-      el('h3', {}, ['Room']),
-      field('Width', num(room.width, { step: 0.05, min: 2 }, r((m, v) => (m.width = v)))),
-      field('Length', num(room.length, { step: 0.05, min: 2 }, r((m, v) => (m.length = v)))),
-      field('Kitchen width', num(room.notch.width, { step: 0.05, min: 0.5 }, r((m, v) => (m.notch.width = v)))),
-      field('Kitchen depth', num(room.notch.depth, { step: 0.05, min: 0.5 }, r((m, v) => (m.notch.depth = v)))),
-      field('Ceiling', num(room.ceiling, { step: 0.05, min: 2 }, r((m, v) => (m.ceiling = v)))),
-      field(
-        'Wall paint',
-        color(room.wallColor, (c) => h.onWallColor(null, c), (c) => h.onWallColor(null, c))
-      ),
-      el('h3', {}, ['Window (top wall)']),
-      field('Sill height', num(room.window.sill, { step: 0.05, min: 0 }, r((m, v) => (m.window.sill = v)))),
-      field('Top height', num(room.window.top, { step: 0.05, min: 0.5 }, r((m, v) => (m.window.top = v)))),
-      el('h3', {}, ['Entrance door (bottom wall)']),
-      field('From left', num(room.entranceDoor.from, { step: 0.05, min: 0 }, r((m, v) => (m.entranceDoor.from = v)))),
-      field('Width', num(room.entranceDoor.width, { step: 0.05, min: 0.6 }, r((m, v) => (m.entranceDoor.width = v)))),
-      el('h3', {}, ['Kitchen door (side partition)']),
-      field('From corner', num(room.kitchenDoor.from, { step: 0.05, min: 0 }, r((m, v) => (m.kitchenDoor.from = v)))),
-      field('Width', num(room.kitchenDoor.width, { step: 0.05, min: 0.6 }, r((m, v) => (m.kitchenDoor.width = v)))),
-      el('h3', {}, ['Bathroom (right part of the notch)']),
-      field('Width', num(room.bathroom.width, { step: 0.05, min: 0 }, r((m, v) => (m.bathroom.width = v)))),
-      field('Door from top', num(room.bathroom.door.from, { step: 0.05, min: 0 }, r((m, v) => (m.bathroom.door.from = v)))),
-      field('Door width', num(room.bathroom.door.width, { step: 0.05, min: 0.6 }, r((m, v) => (m.bathroom.door.width = v)))),
-      el('div', { class: 'hint' }, ['Door is on the kitchen/bathroom wall and opens into the kitchen. Width 0 removes the bathroom.']),
-      el('h3', {}, ['Floors']),
-      field('Office', select(Object.entries(FLOORS).map(([k, f]) => [k, f.name]), room.floor, r((m, v) => (m.floor = v)))),
-      field('Kitchen', select(Object.entries(FLOORS).map(([k, f]) => [k, f.name]), room.kitchenFloor, r((m, v) => (m.kitchenFloor = v)))),
-      field('Bathroom', select(Object.entries(FLOORS).map(([k, f]) => [k, f.name]), room.bathroom.floor, r((m, v) => (m.bathroom.floor = v))))
-    );
-
-    const timeLabel = el('span', {}, [fmtHour(lighting.hour)]);
-    const slider = el('input', { type: 'range', min: 6, max: 20, step: 0.25 });
-    slider.value = lighting.hour;
-    slider.addEventListener('input', () => {
-      timeLabel.textContent = fmtHour(+slider.value);
-      h.onLightingChange({ hour: +slider.value });
-    });
-    const lights = el('input', { type: 'checkbox' });
-    lights.checked = lighting.ceilingLights;
-    lights.addEventListener('change', () => h.onLightingChange({ ceilingLights: lights.checked }));
-    lightSec.replaceChildren(
-      el('h3', {}, ['Daylight']),
-      field('Time', el('div', {}, [slider])),
-      field('', timeLabel),
-      field('Ceiling lights', el('label', { class: 'toggle' }, [lights, ' on']))
-    );
-  }
-
-  helpSec.replaceChildren(
-    el('h3', {}, ['Shortcuts']),
-    el('div', { class: 'hint' }, [
-      el('div', {}, ['Drag an item to move it; it slides along walls.']),
-      el('div', {}, [el('kbd', {}, ['R']), ' rotate · ', el('kbd', {}, ['⇧R']), ' rotate back']),
-      el('div', {}, [el('kbd', {}, ['Arrows']), ' nudge 5 cm · ', el('kbd', {}, ['⇧']), ' 25 cm']),
-      el('div', {}, [el('kbd', {}, ['D']), ' duplicate · ', el('kbd', {}, ['⌫']), ' delete · ', el('kbd', {}, ['Esc']), ' deselect']),
-      el('div', {}, ['Click a wall to paint it. Right-drag pans, scroll zooms.']),
-    ])
+  document.getElementById("dialogClose").onclick = closeDialog;
+  const catalog = document.getElementById("catalog"),
+    inspector = document.getElementById("inspector");
+  const search = el("input", {
+      type: "search",
+      placeholder: "Find furniture…",
+      "aria-label": "Search furniture",
+    }),
+    filter = el("select", { "aria-label": "Furniture category" });
+  for (const cat of ["All categories", ...CATEGORIES])
+    filter.append(el("option", { value: cat }, [cat]));
+  const grid = el("div", { class: "catalog-content" });
+  catalog.append(
+    el("div", { class: "panel-heading" }, [
+      el("span", { class: "eyebrow" }, ["MAKE ROOM FOR IDEAS"]),
+      el("h2", {}, ["Furniture"]),
+      el("p", { class: "hint" }, ["Choose a piece, then click to place it."]),
+    ]),
+    el("div", { class: "catalog-search" }, [search, filter]),
+    grid,
   );
-
+  const thumbs = makeThumbnails(CATALOG);
+  function renderCatalog() {
+    grid.replaceChildren();
+    let count = 0;
+    for (const cat of CATEGORIES) {
+      if (filter.value !== "All categories" && filter.value !== cat) continue;
+      const defs = CATALOG.filter(
+        (d) =>
+          d.cat === cat &&
+          `${d.name} ${d.size} ${d.cat}`
+            .toLowerCase()
+            .includes(search.value.toLowerCase()),
+      );
+      if (!defs.length) continue;
+      count += defs.length;
+      const cards = el("div", { class: "cat-grid" });
+      for (const d of defs) {
+        const b = button("", () => h.onSpawn(d), "cat-item");
+        b.title = `Place ${d.name}, ${d.size} cm`;
+        b.setAttribute("aria-label", `Place ${d.name} ${d.size}`);
+        if (thumbs.has(d.type))
+          b.append(
+            el("img", { src: thumbs.get(d.type), alt: "", draggable: "false" }),
+          );
+        b.append(
+          el("strong", {}, [d.name]),
+          el("small", {}, [`${d.size}${d.size.includes('"') ? "" : " cm"}`]),
+        );
+        cards.append(b);
+      }
+      grid.append(el("h3", {}, [cat]), cards);
+    }
+    if (!count)
+      grid.append(
+        el("div", { class: "empty" }, [
+          "No matches. Try another name or category.",
+        ]),
+      );
+  }
+  search.oninput = renderCatalog;
+  filter.onchange = renderCatalog;
+  renderCatalog();
+  const tabs = el("div", {
+      class: "inspector-tabs",
+      role: "tablist",
+      "aria-label": "Property categories",
+    }),
+    panels = {};
+  let active = "Object",
+    selectedWall = null,
+    currentRoom = null;
+  for (const name of ["Object", "Room", "Materials", "Lighting"]) {
+    const p = el("div", {
+      class: "inspector-panel",
+      role: "tabpanel",
+      id: `panel-${name}`,
+      "aria-label": name,
+    });
+    panels[name] = p;
+    const b = button(name, () => setTab(name));
+    b.setAttribute("role", "tab");
+    b.id = `tab-${name}`;
+    b.setAttribute("aria-controls", p.id);
+    tabs.append(b);
+  }
+  function setTab(name) {
+    active = name;
+    for (const [key, p] of Object.entries(panels)) p.hidden = key !== name;
+    for (const b of tabs.children) {
+      const on = b.textContent === name;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", String(on));
+      b.tabIndex = on ? 0 : -1;
+    }
+  }
+  tabs.addEventListener("keydown", (e) => {
+    if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+    e.preventDefault();
+    const names = Object.keys(panels),
+      i = names.indexOf(active);
+    setTab(names[(i + (e.key === "ArrowRight" ? 1 : 3)) % 4]);
+    tabs.querySelector('[aria-selected="true"]').focus();
+  });
+  inspector.append(tabs, ...Object.values(panels));
+  const selectionContent = el("div"),
+    itemList = el("div", { class: "item-list" }),
+    checks = el("div", { id: "layoutChecks" });
+  panels.Object.append(
+    selectionContent,
+    section("Objects in this layout", [itemList]),
+    section("Layout checks", [
+      el("p", { class: "hint" }, [
+        "Footprint checks flag overlaps and door swings. Rugs and objects at different heights are allowed.",
+      ]),
+      checks,
+    ]),
+  );
+  const action = (label, a, cls = "") =>
+    button(label, () => h.onItemAction(a), cls);
+  function showItem(item, def, items = []) {
+    const focused = selectionContent.contains(document.activeElement)
+      ? document.activeElement.getAttribute("aria-label")
+      : null;
+    const n = items.length || Number(!!item),
+      body = [];
+    selectionContent.replaceChildren();
+    if (!item) {
+      selectionContent.append(
+        el("div", { class: "empty selection-empty" }, [
+          el("div", { class: "empty-icon" }, ["⌖"]),
+          el("strong", {}, ["Give an idea some space."]),
+          el("p", {}, [
+            "Select a piece to adjust it, or choose furniture from the library.",
+          ]),
+          el("p", { class: "hint" }, [
+            "Shift-click to select multiple pieces. Group a desk, screen and chair into a workstation.",
+          ]),
+        ]),
+      );
+    } else {
+      setTab("Object");
+      selectedWall = null;
+      body.push(
+        el("div", { class: "selection-heading" }, [
+          el("span", { class: "eyebrow" }, [
+            n > 1 ? "MULTIPLE SELECTION" : "SELECTED OBJECT",
+          ]),
+          el("h2", {}, [n > 1 ? `${n} pieces selected` : def.name]),
+          el("p", { class: "hint" }, [
+            n > 1
+              ? "Move, rotate and duplicate these pieces together."
+              : sizeLabel(def),
+          ]),
+        ]),
+      );
+      if (n === 1 && !def.fixedSize) {
+        body.push(
+          section("Size", [
+            ...["w", "d", "h"].map((k, i) =>
+              field(
+                ["Width · cm", "Depth · cm", "Height · cm"][i],
+                num(def[k] * 100, { min: 10, max: 5000, step: 5 }, (v) =>
+                  h.onItemChange({ [k]: v / 100 }),
+                ),
+              ),
+            ),
+            button(
+              "Reset size",
+              () => h.onItemChange({ w: null, d: null, h: null }),
+              "text-button",
+            ),
+          ]),
+        );
+      }
+      if (n === 1)
+        body.push(
+          section("Position & rotation", [
+            field(
+              "X · m",
+              num(item.x, { step: 0.05 }, (v) => h.onItemChange({ x: v })),
+            ),
+            field(
+              "Z · m",
+              num(item.z, { step: 0.05 }, (v) => h.onItemChange({ z: v })),
+            ),
+            field(
+              "Rotation · °",
+              num(item.rot || 0, { min: -360, max: 360, step: 15 }, (v) =>
+                h.onItemChange({ rot: v }),
+              ),
+            ),
+            field(
+              "Elevation · m",
+              num(item.elevation || 0, {}, (v) =>
+                h.onItemChange({ elevation: v }),
+              ),
+            ),
+            field(
+              "Colour",
+              color(item.color || def.color, (c) =>
+                h.onItemChange({ color: c }),
+              ),
+            ),
+          ]),
+        );
+      body.push(
+        el("div", { class: "row" }, [
+          action("↶ 15°", "rotateLeft"),
+          action("↷ 15°", "rotateRight"),
+        ]),
+        el("div", { class: "row" }, [
+          action("Duplicate", "duplicate"),
+          action("Delete", "delete", "danger"),
+        ]),
+      );
+      if (n > 1)
+        body.push(
+          el("div", { class: "row" }, [
+            action("Group", "group"),
+            action("Ungroup", "ungroup"),
+          ]),
+          el("div", { class: "row" }, [
+            action("Align X", "alignX"),
+            action("Align Z", "alignZ"),
+          ]),
+        );
+      else if (item.group) body.push(action("Ungroup", "ungroup"));
+      selectionContent.append(...body);
+    }
+    if (focused)
+      [...selectionContent.querySelectorAll("input")]
+        .find((i) => i.getAttribute("aria-label") === focused)
+        ?.focus();
+    const bar = document.getElementById("selectionBar");
+    bar.hidden = !item;
+    bar.replaceChildren();
+    if (item)
+      bar.append(
+        el("span", {}, [n > 1 ? `${n} selected` : def.name]),
+        action("↶", "rotateLeft"),
+        action("↷", "rotateRight"),
+        action("Duplicate", "duplicate"),
+        action("Delete", "delete"),
+      );
+  }
+  function showWall(id, room) {
+    selectedWall = id;
+    if (id) {
+      currentRoom = room;
+      renderMaterials();
+      setTab("Materials");
+    }
+  }
+  function renderMaterials() {
+    const r = currentRoom;
+    if (!r) return;
+    const target = selectedWall ? WALL_NAMES[selectedWall] : "All walls",
+      value = selectedWall
+        ? r.wallColors[selectedWall] || r.wallColor
+        : r.wallColor;
+    const paints = el("div", { class: "paint-swatches" });
+    for (const c of [
+      "#f2efe8",
+      "#ffffff",
+      "#d7d9d2",
+      "#b7c4b0",
+      "#82918d",
+      "#33464b",
+      "#b6a08c",
+      "#c6a19c",
+    ]) {
+      const b = button(
+        "",
+        () => h.onWallColor(selectedWall, c),
+        "paint-swatch",
+      );
+      b.style.background = c;
+      b.title = c;
+      b.setAttribute("aria-label", `Paint ${target.toLowerCase()} ${c}`);
+      paints.append(b);
+    }
+    const paintChildren = [
+      el("p", { class: "hint" }, [target]),
+      paints,
+      field(
+        "Custom paint",
+        color(value, (c) => h.onWallColor(selectedWall, c)),
+      ),
+    ];
+    if (selectedWall)
+      paintChildren.push(
+        button("Use room colour", () => h.onWallColor(selectedWall, null)),
+        button(
+          "Edit all walls",
+          () => {
+            selectedWall = null;
+            renderMaterials();
+          },
+          "text-button",
+        ),
+      );
+    const sections = [section("Wall paint", paintChildren)];
+    for (const [label, key, value] of [
+      ["Office floor", "floor", r.floor],
+      ["Kitchen floor", "kitchenFloor", r.kitchenFloor],
+      ["Bathroom floor", "bathroom", r.bathroom.floor],
+    ]) {
+      const grid = el("div", { class: "material-grid" });
+      for (const [k, f] of Object.entries(FLOORS)) {
+        const b = button(
+          "",
+          () =>
+            h.onRoomChange((m) => {
+              if (key === "bathroom") m.bathroom.floor = k;
+              else m[key] = k;
+            }),
+          "material-card" + (k === value ? " active" : ""),
+        );
+        b.title = f.name;
+        b.setAttribute("aria-label", `${label}: ${f.name}`);
+        b.setAttribute("aria-pressed", String(k === value));
+        b.append(
+          el("img", { src: getFloorTexture(k).image.toDataURL(), alt: "" }),
+          el("span", {}, [f.name.replace(" (ours)", "")]),
+        );
+        grid.append(b);
+      }
+      sections.push(section(label, [grid], label === "Office floor"));
+    }
+    panels.Materials.replaceChildren(...sections);
+  }
+  function renderRoom(r, lighting) {
+    const openSections = new Map(
+      [...inspector.querySelectorAll("details")].map((d) => [
+        d.querySelector("summary").textContent,
+        d.open,
+      ]),
+    );
+    const scrollTop = inspector.scrollTop;
+    currentRoom = r;
+    const change = (path) => (v) =>
+      h.onRoomChange((room) => {
+        let o = room;
+        for (const key of path.slice(0, -1)) o = o[key];
+        o[path.at(-1)] = v;
+      });
+    const f = (label, path, value, opts) =>
+      field(label, num(value, opts, change(path)));
+    panels.Room.replaceChildren(
+      el("div", { class: "panel-heading" }, [
+        el("span", { class: "eyebrow" }, ["THE FOUNDATIONS"]),
+        el("h2", {}, ["Room dimensions"]),
+        el("p", { class: "hint" }, ["All measurements are in metres."]),
+      ]),
+      section("Room envelope", [
+        f("Width · m", ["width"], r.width, { min: 2 }),
+        f("Length · m", ["length"], r.length, { min: 2 }),
+        f("Ceiling · m", ["ceiling"], r.ceiling, { min: 2.1, max: 10 }),
+        f("Notch width · m", ["notch", "width"], r.notch.width, { min: 0.8 }),
+        f("Notch depth · m", ["notch", "depth"], r.notch.depth, { min: 1 }),
+      ]),
+      section(
+        "Window wall",
+        [
+          f("Sill · m", ["window", "sill"], r.window.sill),
+          f("Top · m", ["window", "top"], r.window.top),
+        ],
+        false,
+      ),
+      section(
+        "Entrance door",
+        [
+          f("From left · m", ["entranceDoor", "from"], r.entranceDoor.from),
+          f("Width · m", ["entranceDoor", "width"], r.entranceDoor.width, {
+            min: 0.6,
+          }),
+        ],
+        false,
+      ),
+      section(
+        "Kitchen door",
+        [
+          f("From corner · m", ["kitchenDoor", "from"], r.kitchenDoor.from, {
+            min: 0.1,
+          }),
+          f("Width · m", ["kitchenDoor", "width"], r.kitchenDoor.width, {
+            min: 0.6,
+          }),
+        ],
+        false,
+      ),
+      section(
+        "Bathroom",
+        [
+          f("Width · m", ["bathroom", "width"], r.bathroom.width),
+          f(
+            "Door offset · m",
+            ["bathroom", "door", "from"],
+            r.bathroom.door.from,
+          ),
+          f(
+            "Door width · m",
+            ["bathroom", "door", "width"],
+            r.bathroom.door.width,
+            { min: 0.6 },
+          ),
+          el("p", { class: "hint" }, ["Set bathroom width to 0 to remove it."]),
+        ],
+        false,
+      ),
+    );
+    renderMaterials();
+    const time = el("output", { class: "time-output" }),
+      slider = el("input", {
+        type: "range",
+        min: 6,
+        max: 20,
+        step: 0.25,
+        "aria-label": "Daylight time",
+      });
+    slider.value = lighting.hour;
+    const fmt = (v) =>
+      `${String(Math.floor(v)).padStart(2, "0")}:${String(Math.round((v % 1) * 60)).padStart(2, "0")}`;
+    time.textContent = fmt(lighting.hour);
+    slider.addEventListener("input", () => {
+      time.textContent = fmt(+slider.value);
+      h.onLightingChange({ hour: +slider.value }, false);
+    });
+    slider.addEventListener("change", () =>
+      h.onLightingChange({ hour: +slider.value }, true),
+    );
+    const light = el("input", { type: "checkbox" });
+    light.checked = lighting.ceilingLights;
+    light.onchange = () =>
+      h.onLightingChange({ ceilingLights: light.checked }, true);
+    panels.Lighting.replaceChildren(
+      el("div", { class: "panel-heading" }, [
+        el("span", { class: "eyebrow" }, ["SET THE MOOD"]),
+        el("h2", {}, ["Light & atmosphere"]),
+      ]),
+      section("Daylight", [
+        time,
+        slider,
+        el("div", { class: "range-labels" }, [
+          "06:00",
+          el("span", {}, ["20:00"]),
+        ]),
+        el("p", { class: "hint" }, [
+          "Explore a simulated day through the window wall.",
+        ]),
+      ]),
+      section("Interior lights", [
+        el("label", { class: "toggle" }, [light, " Ceiling lights"]),
+      ]),
+      el("p", { class: "hint" }, [
+        "Use From door or Walkthrough to see the room at eye level. Photo mode refines the current view with natural light bounces.",
+      ]),
+    );
+    for (const d of inspector.querySelectorAll("details")) {
+      const key = d.querySelector("summary").textContent;
+      if (openSections.has(key)) d.open = openSections.get(key);
+    }
+    inspector.scrollTop = scrollTop;
+    setTab(active);
+  }
+  function renderItems(items, selected) {
+    itemList.replaceChildren();
+    for (const it of items) {
+      const def = CATALOG.find((d) => d.type === it.type);
+      const b = button(
+        `${it.group ? "▣" : "○"} ${def?.name || it.type}`,
+        () => {},
+        "object-row" + (selected.has(it.id) ? " active" : ""),
+      );
+      b.onclick = (e) => h.onSelectId(it.id, e.shiftKey);
+      b.setAttribute("aria-pressed", String(selected.has(it.id)));
+      itemList.append(b);
+    }
+    if (!items.length)
+      itemList.append(
+        el("p", { class: "hint" }, ["Your room is ready for its first piece."]),
+      );
+  }
+  function showWarnings(warnings) {
+    checks.replaceChildren();
+    if (!warnings.length)
+      checks.append(
+        el("p", { class: "check-good" }, [
+          "✓ No overlaps or blocked door swings detected.",
+        ]),
+      );
+    for (const w of warnings)
+      checks.append(
+        button(w.message, () => h.onSelectIds(w.ids), "warning-row"),
+      );
+    document.getElementById("checksStatus").textContent = warnings.length
+      ? `${warnings.length} layout ${warnings.length === 1 ? "check" : "checks"}`
+      : "✓ Layout clear";
+    document
+      .getElementById("checksBtn")
+      .classList.toggle("has-warnings", !!warnings.length);
+  }
+  document.getElementById("checksBtn").onclick = () => {
+    setTab("Object");
+    checks.parentElement.open = true;
+    checks.scrollIntoView({ behavior: "smooth" });
+  };
   showItem(null);
-  return { showItem, showWall, renderRoom, setSaveStatus: (t) => ($('#saveStatus').textContent = t) };
+  setTab("Object");
+  return {
+    showItem,
+    showWall,
+    renderRoom,
+    renderItems,
+    showWarnings,
+    setTab,
+    getTab: () => active,
+    setSaveStatus: (t) =>
+      (document.getElementById("saveStatus").textContent = t),
+  };
 }

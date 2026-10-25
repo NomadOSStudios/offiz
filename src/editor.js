@@ -1,53 +1,53 @@
-// Selection, dragging and keyboard editing of furniture items.
-import * as THREE from 'three';
-import { buildItem, itemDef, CATALOG_BY_TYPE } from './catalog.js';
-import { pointInPolygon } from './room.js';
-
+import * as THREE from "three";
+import { buildItem, itemDef, CATALOG_BY_TYPE } from "./catalog.js";
+import { footprint, contained, bounds } from "./geometry.js";
+import { uid } from "./store.js";
 const SNAP = 0.05;
-const ROT_STEP = 15;
-
+const dispose = (g) =>
+  g.traverse((o) => {
+    o.geometry?.dispose();
+    if (o.material) for (const m of [].concat(o.material)) m.dispose();
+  });
 export class Editor {
-  constructor({ scene, dom, getCamera, getControls, getRoomGroup, onChange, onSelect, onWallSelect }) {
-    this.scene = scene;
-    this.dom = dom;
-    this.getCamera = getCamera;
-    this.getControls = getControls;
-    this.getRoomGroup = getRoomGroup;
-    this.onChange = onChange;
-    this.onSelect = onSelect;
-    this.onWallSelect = onWallSelect;
+  constructor(options) {
+    Object.assign(this, options);
     this.snap = true;
     this.enabled = true;
-
-    this.itemsGroup = new THREE.Group();
-    scene.add(this.itemsGroup);
     this.items = new Map();
-    this.selected = null;
-    this.outline = null;
+    this.selectedIds = new Set();
+    this.outlines = [];
+    this.itemsGroup = new THREE.Group();
+    this.scene.add(this.itemsGroup);
     this.ray = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.drag = null;
-    this.downPos = null;
     this.room = null;
-
-    dom.addEventListener('pointerdown', (e) => this.onDown(e), true);
-    window.addEventListener('pointermove', (e) => this.onMove(e));
-    window.addEventListener('pointerup', (e) => this.onUp(e));
-    window.addEventListener('keydown', (e) => this.onKey(e));
+    this.preview = null;
+    this.guides = [];
+    this.dom.addEventListener("pointerdown", (e) => this.onDown(e), true);
+    window.addEventListener("pointermove", (e) => this.onMove(e));
+    window.addEventListener("pointerup", (e) => this.onUp(e));
+    window.addEventListener("pointercancel", () => this.finishDrag());
+    window.addEventListener("blur", () => this.finishDrag());
+    window.addEventListener("keydown", (e) => this.onKey(e));
   }
-
+  get selected() {
+    return this.items.get([...this.selectedIds][0]) || null;
+  }
+  get selection() {
+    return [...this.selectedIds]
+      .map((id) => this.items.get(id))
+      .filter(Boolean);
+  }
   setRoom(room) {
     this.room = room;
   }
-
-  // ---- items -------------------------------------------------------------
-
   addItem(data) {
     const base = CATALOG_BY_TYPE[data.type];
     if (!base) return null;
-    if (data.elevation == null && base.elevation != null) data.elevation = base.elevation;
-    const def = itemDef(base, data);
-    const g = buildItem(def, data.color);
+    data.elevation ??= base.elevation ?? 0;
+    const def = itemDef(base, data),
+      g = buildItem(def, data.color);
     g.userData.item = data;
     g.userData.def = def;
     this.applyTransform(g);
@@ -55,210 +55,459 @@ export class Editor {
     this.items.set(data.id, g);
     return g;
   }
-
-  rebuildItem(g) {
-    const { item, def } = g.userData;
-    const wasSelected = this.selected === g;
-    this.removeGroup(g);
-    const n = this.addItem(item);
-    if (wasSelected) this.select(n, false);
-    return n;
-  }
-
-  removeGroup(g) {
-    if (this.selected === g) this.select(null, false);
-    this.items.delete(g.userData.item.id);
-    g.traverse((o) => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) o.material.dispose();
-    });
-    this.itemsGroup.remove(g);
-  }
-
   applyTransform(g) {
     const d = g.userData.item;
-    g.position.set(d.x, d.elevation ?? 0, d.z);
+    g.position.set(d.x, d.elevation || 0, d.z);
     g.rotation.y = THREE.MathUtils.degToRad(d.rot || 0);
   }
-
-  load(items) {
-    for (const g of [...this.items.values()]) this.removeGroup(g);
-    for (const it of items) this.addItem(it);
+  clearOutlines() {
+    for (const o of this.outlines) {
+      o.removeFromParent();
+      dispose(o);
+    }
+    this.outlines = [];
   }
-
+  removeGroup(g) {
+    this.items.delete(g.userData.item.id);
+    this.selectedIds.delete(g.userData.item.id);
+    g.removeFromParent();
+    dispose(g);
+  }
+  load(items, selected = []) {
+    this.cancelPlacement();
+    this.clearOutlines();
+    for (const g of [...this.items.values()]) this.removeGroup(g);
+    for (const it of items) this.addItem({ ...it });
+    this.selectedIds = new Set(selected.filter((id) => this.items.has(id)));
+    this.refreshSelection(false);
+  }
   serialize() {
     return [...this.items.values()].map((g) => ({ ...g.userData.item }));
   }
-
-  // Place a new item near the middle of the office (nudged so repeats don't stack).
-  spawn(def, extra = {}) {
-    const n = this.items.size % 6;
-    const { W, L, nd } = this.room;
-    const data = {
-      id: `i${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
-      type: def.type,
-      x: W / 2 + (n - 2.5) * 0.3,
-      z: (L - nd) / 2 + (n % 2) * 0.4,
-      rot: 0,
-      ...extra,
-    };
-    if (def.elevation != null) data.elevation = def.elevation;
-    if (def.wallMounted) this.snapToWall(data, def);
-    this.clampInside(data, def);
-    const g = this.addItem(data);
-    this.select(g);
-    this.onChange();
-    return g;
+  select(g, notify = true, additive = false) {
+    const ids = g
+      ? g.userData.item.group
+        ? [...this.items.values()]
+            .filter((o) => o.userData.item.group === g.userData.item.group)
+            .map((o) => o.userData.item.id)
+        : [g.userData.item.id]
+      : [];
+    if (!additive) this.selectedIds.clear();
+    const remove = additive && ids.every((id) => this.selectedIds.has(id));
+    for (const id of ids)
+      remove ? this.selectedIds.delete(id) : this.selectedIds.add(id);
+    this.refreshSelection(notify);
   }
-
-  updateSelected(patch) {
-    if (!this.selected) return;
-    const g = this.selected;
-    const d = g.userData.item;
-    let rebuild = patch.color != null && patch.color !== d.color;
-    // Size overrides: null clears one back to the catalog default.
-    for (const k of ['w', 'd', 'h']) {
-      if (!(k in patch)) continue;
-      if (patch[k] == null) delete d[k];
-      else d[k] = patch[k];
-      delete patch[k];
-      rebuild = true;
+  refreshSelection(notify = true) {
+    this.clearOutlines();
+    for (const g of this.selection) {
+      const d = g.userData.def,
+        box = new THREE.BoxGeometry(d.w + 0.012, d.h + 0.012, d.d + 0.012),
+        geo = new THREE.EdgesGeometry(box);
+      box.dispose();
+      const outline = new THREE.LineSegments(
+        geo,
+        new THREE.LineBasicMaterial({ color: "#f0b429", depthTest: false }),
+      );
+      outline.position.y = d.h / 2;
+      outline.renderOrder = 10;
+      g.add(outline);
+      this.outlines.push(outline);
     }
-    Object.assign(d, patch);
-    const def = itemDef(CATALOG_BY_TYPE[d.type], d);
-    if (def.wallMounted && (patch.x != null || patch.z != null || rebuild)) this.snapToWall(d, def);
-    if (rebuild) this.rebuildItem(g);
-    else this.applyTransform(g);
-    this.onChange();
-    this.onSelect(this.selected?.userData.item ?? null, this.selected?.userData.def ?? def);
+    if (notify) this.notifySelection();
+    this.onVisual?.();
   }
-
-  rotateSelected(deg) {
-    if (!this.selected) return;
-    const d = this.selected.userData.item;
-    this.updateSelected({ rot: ((d.rot || 0) + deg + 540) % 360 - 180 });
+  notifySelection() {
+    this.onSelect(
+      this.selected?.userData.item ?? null,
+      this.selected?.userData.def ?? null,
+      this.selection.map((g) => g.userData.item),
+    );
   }
-
-  deleteSelected() {
-    if (!this.selected) return;
-    this.removeGroup(this.selected);
-    this.onChange();
-  }
-
-  duplicateSelected() {
-    if (!this.selected) return;
-    const d = this.selected.userData.item;
-    const def = this.selected.userData.def;
-    const copy = { ...d, id: `i${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}` };
-    const nx = (def.wallMounted ? 0 : 1) * 0.4;
-    copy.x += def.wallMounted ? 0 : nx;
-    copy.z += def.wallMounted ? def.w + 0.1 : 0.4;
-    if (def.wallMounted) this.snapToWall(copy, def);
-    this.clampInside(copy, def);
-    const g = this.addItem(copy);
-    this.select(g);
-    this.onChange();
-  }
-
-  // ---- selection ---------------------------------------------------------
-
-  select(g, notify = true) {
-    if (this.outline) {
-      this.outline.removeFromParent();
-      this.outline.geometry.dispose();
-      this.outline = null;
-    }
-    this.selected = g;
-    if (g) {
-      const def = g.userData.def;
-      const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(def.w + 0.02, def.h + 0.02, def.d + 0.02));
-      this.outline = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: '#f0b429' }));
-      this.outline.position.y = def.h / 2;
-      g.add(this.outline);
-    }
-    if (notify) this.onSelect(g ? g.userData.item : null, g ? g.userData.def : null);
-  }
-
-  // ---- geometry helpers --------------------------------------------------
-
   corners(d, def) {
-    const r = THREE.MathUtils.degToRad(d.rot || 0);
-    const c = Math.cos(r);
-    const s = Math.sin(r);
-    const hw = def.w / 2;
-    const hd = def.d / 2;
-    return [
-      [-hw, -hd],
-      [hw, -hd],
-      [hw, hd],
-      [-hw, hd],
-    ].map(([x, z]) => [d.x + x * c + z * s, d.z - x * s + z * c]);
+    return footprint(d, def);
   }
-
   rooms() {
-    return Object.values(this.room.polygons).filter(Boolean);
+    return Object.values(this.room?.polygons || {}).filter(Boolean);
   }
-
-  // Fully inside one room (office, kitchen or bathroom) — never straddling a wall.
   isInside(d, def) {
-    if (!this.room) return true;
-    const cs = this.corners(d, def);
-    return this.rooms().some((poly) => cs.every((p) => pointInPolygon(p, poly)));
+    return (
+      ["w", "d", "h"].every(
+        (k) =>
+          d[k] == null || (Number.isFinite(d[k]) && d[k] >= 0.1 && d[k] <= 50),
+      ) &&
+      [d.x, d.z, d.rot || 0, d.elevation || 0, def.w, def.d, def.h].every(
+        Number.isFinite,
+      ) &&
+      (d.elevation || 0) >= 0 &&
+      (!this.room ||
+        ((d.elevation || 0) + def.h <= this.room.ceiling + 0.001 &&
+          this.rooms().some((p) => contained(footprint(d, def), p))))
+    );
   }
-
-  // Pull a point back into the envelope so spawned items are always reachable.
-  clampInside(d, def) {
-    if (def.wallMounted || this.isInside(d, def)) return;
-    const { W, L } = this.room;
-    d.x = THREE.MathUtils.clamp(d.x, def.w / 2 + 0.05, W - def.w / 2 - 0.05);
-    d.z = THREE.MathUtils.clamp(d.z, def.d / 2 + 0.05, L - def.d / 2 - 0.05);
-    if (!this.isInside(d, def)) {
-      d.x = W / 2;
-      d.z = (L - this.room.nd) / 2;
-    }
-  }
-
-  // Wall-mounted items: stick the back to the nearest wall, facing into the room.
   snapToWall(d, def) {
-    if (!this.room) return;
     let best = null;
-    for (const poly of this.rooms()) {
+    for (const poly of this.rooms())
       for (let i = 0; i < poly.length; i++) {
-        const a = poly[i];
-        const b = poly[(i + 1) % poly.length];
-        const dx = b[0] - a[0];
-        const dz = b[1] - a[1];
-        const len2 = dx * dx + dz * dz;
-        let t = ((d.x - a[0]) * dx + (d.z - a[1]) * dz) / len2;
-        const half = def.w / 2 / Math.sqrt(len2);
-        t = THREE.MathUtils.clamp(t, half, 1 - half);
-        const px = a[0] + dx * t;
-        const pz = a[1] + dz * t;
-        const dist = Math.hypot(d.x - px, d.z - pz);
-        if (!best || dist < best.dist) best = { dist, px, pz, dx, dz, len: Math.sqrt(len2) };
+        const a = poly[i],
+          b = poly[(i + 1) % poly.length],
+          dx = b[0] - a[0],
+          dz = b[1] - a[1],
+          len = Math.hypot(dx, dz);
+        if (len < def.w + 0.01) continue;
+        const t = THREE.MathUtils.clamp(
+          ((d.x - a[0]) * dx + (d.z - a[1]) * dz) / (len * len),
+          def.w / 2 / len,
+          1 - def.w / 2 / len,
+        );
+        const px = a[0] + dx * t,
+          pz = a[1] + dz * t,
+          dist = Math.hypot(d.x - px, d.z - pz);
+        if (!best || dist < best.dist) best = { px, pz, dx, dz, len, dist };
+      }
+    if (!best) return;
+    const nx = -best.dz / best.len,
+      nz = best.dx / best.len;
+    d.x = best.px + nx * (def.d / 2 + 0.005);
+    d.z = best.pz + nz * (def.d / 2 + 0.005);
+    d.rot = Math.round((Math.atan2(nx, nz) * 180) / Math.PI);
+  }
+  commitTrials(trials, { commit = true, quiet = false } = {}) {
+    if (
+      trials.some((d) => !this.isInside(d, itemDef(CATALOG_BY_TYPE[d.type], d)))
+    ) {
+      if (!quiet) {
+        this.onMessage?.("That change would cross a wall or ceiling.");
+        this.notifySelection();
+      }
+      return false;
+    }
+    let changed = false;
+    this.clearOutlines();
+    for (const d of trials) {
+      const old = this.items.get(d.id);
+      if (!old) continue;
+      if (JSON.stringify(old.userData.item) === JSON.stringify(d)) continue;
+      const rebuild = ["w", "d", "h", "color"].some(
+        (k) => old.userData.item[k] !== d[k],
+      );
+      if (rebuild) {
+        const selected = this.selectedIds.has(d.id);
+        this.removeGroup(old);
+        this.addItem(d);
+        if (selected) this.selectedIds.add(d.id);
+      } else {
+        old.userData.item = d;
+        this.applyTransform(old);
+      }
+      changed = true;
+    }
+    this.refreshSelection(commit);
+    if (changed && commit) this.onChange();
+    return changed;
+  }
+  updateSelected(patch) {
+    if (!this.selected || !this.enabled) return;
+    const d = this.selected.userData.item;
+    if (this.selection.length > 1 && (patch.x != null || patch.z != null))
+      return this.moveSelection((patch.x ?? d.x) - d.x, (patch.z ?? d.z) - d.z);
+    if (this.selection.length > 1 && patch.rot != null)
+      return this.rotateSelected(patch.rot - (d.rot || 0));
+    const trials = this.selection.map((g) => {
+      const next = { ...g.userData.item, ...patch };
+      for (const k of ["w", "d", "h"]) if (next[k] === null) delete next[k];
+      const def = itemDef(CATALOG_BY_TYPE[next.type], next);
+      if (def.wallMounted && ["x", "z", "w", "d"].some((k) => k in patch))
+        this.snapToWall(next, def);
+      return next;
+    });
+    return this.commitTrials(trials);
+  }
+  moveSelection(dx, dz, { commit = true, quiet = false } = {}) {
+    const trials = this.selection.map((g) => {
+      const d = {
+        ...g.userData.item,
+        x: g.userData.item.x + dx,
+        z: g.userData.item.z + dz,
+      };
+      if (g.userData.def.wallMounted && this.selection.length === 1)
+        this.snapToWall(d, g.userData.def);
+      return d;
+    });
+    return this.commitTrials(trials, { commit, quiet });
+  }
+  rotateSelected(deg) {
+    if (!this.selection.length) return;
+    const cx =
+        this.selection.reduce((s, g) => s + g.position.x, 0) /
+        this.selection.length,
+      cz =
+        this.selection.reduce((s, g) => s + g.position.z, 0) /
+        this.selection.length,
+      a = (deg * Math.PI) / 180;
+    return this.commitTrials(
+      this.selection.map((g) => {
+        const d = g.userData.item,
+          x = d.x - cx,
+          z = d.z - cz;
+        return {
+          ...d,
+          x: cx + x * Math.cos(a) + z * Math.sin(a),
+          z: cz - x * Math.sin(a) + z * Math.cos(a),
+          rot: (((d.rot || 0) + deg + 540) % 360) - 180,
+        };
+      }),
+    );
+  }
+  deleteSelected() {
+    if (!this.selection.length) return;
+    this.clearOutlines();
+    for (const g of this.selection) this.removeGroup(g);
+    this.refreshSelection();
+    this.onChange();
+  }
+  duplicateSelected() {
+    const groups = new Map(),
+      source = this.selection.map((g) => g.userData.item);
+    if (!source.length) return;
+    let copies = null;
+    for (const [dx, dz] of [
+      [0.4, 0.4],
+      [-0.4, 0.4],
+      [0.4, -0.4],
+      [-0.4, -0.4],
+      [0, 0],
+    ]) {
+      const trial = source.map((d) => ({ ...d, x: d.x + dx, z: d.z + dz }));
+      if (
+        trial.every((d) =>
+          this.isInside(d, itemDef(CATALOG_BY_TYPE[d.type], d)),
+        )
+      ) {
+        copies = trial;
+        break;
       }
     }
-    if (!best) return;
-    // Inward normal for the clockwise polygons is (-dz, dx).
-    const nx = -best.dz / best.len;
-    const nz = best.dx / best.len;
-    const off = def.d / 2 + 0.005;
-    d.x = best.px + nx * off;
-    d.z = best.pz + nz * off;
-    d.rot = Math.round(THREE.MathUtils.radToDeg(Math.atan2(nx, nz)));
+    if (!copies) return this.onMessage?.("No room for a duplicate.");
+    this.selectedIds.clear();
+    for (const d of copies) {
+      d.id = uid();
+      if (d.group) {
+        if (!groups.has(d.group)) groups.set(d.group, uid());
+        d.group = groups.get(d.group);
+      }
+      this.addItem(d);
+      this.selectedIds.add(d.id);
+    }
+    this.refreshSelection();
+    this.onChange();
   }
-
-  // ---- pointer -----------------------------------------------------------
-
+  groupSelected() {
+    if (this.selection.length < 2) return;
+    const group = uid();
+    for (const g of this.selection) g.userData.item.group = group;
+    this.notifySelection();
+    this.onChange();
+  }
+  ungroupSelected() {
+    for (const g of this.selection) delete g.userData.item.group;
+    this.notifySelection();
+    this.onChange();
+  }
+  align(axis) {
+    if (this.selection.length < 2) return;
+    const b = bounds(
+        this.selection.flatMap((g) =>
+          footprint(g.userData.item, g.userData.def),
+        ),
+      ),
+      target = axis === "x" ? (b.left + b.right) / 2 : (b.top + b.bottom) / 2;
+    this.commitTrials(
+      this.selection.map((g) => ({ ...g.userData.item, [axis]: target })),
+    );
+  }
+  beginPlacement(def) {
+    this.cancelPlacement();
+    this.select(null);
+    const data = {
+      id: uid(),
+      type: def.type,
+      x: this.room.W / 2,
+      z: (this.room.L - this.room.nd) / 2,
+      rot: 0,
+      elevation: def.elevation || 0,
+    };
+    const g = buildItem(def);
+    g.traverse((o) => {
+      if (o.isMesh) {
+        o.material.transparent = true;
+        o.material.opacity = 0.5;
+        o.material.depthWrite = false;
+      }
+    });
+    this.scene.add(g);
+    this.preview = { def, data, g, valid: false };
+    this.updatePlacement(data.x, data.z);
+    this.onMessage?.(
+      `Place ${def.name.toLowerCase()}: click the room · R rotates · Esc cancels`,
+    );
+  }
+  updatePlacement(x, z) {
+    if (!this.preview) return;
+    const p = this.preview;
+    p.data.x = this.snap ? Math.round(x / SNAP) * SNAP : x;
+    p.data.z = this.snap ? Math.round(z / SNAP) * SNAP : z;
+    if (p.def.wallMounted) this.snapToWall(p.data, p.def);
+    p.valid = this.isInside(p.data, p.def);
+    p.g.position.set(p.data.x, p.data.elevation, p.data.z);
+    p.g.rotation.y = ((p.data.rot || 0) * Math.PI) / 180;
+    p.g.traverse((o) => {
+      if (o.isMesh) o.material.color.set(p.valid ? "#51b8a0" : "#e05d63");
+    });
+    this.onVisual?.();
+  }
+  placePreview() {
+    if (!this.preview?.valid)
+      return this.onMessage?.("Choose a position fully inside a room.");
+    const d = { ...this.preview.data };
+    this.cancelPlacement();
+    const g = this.addItem(d);
+    this.select(g);
+    this.onChange();
+    this.onMessage?.("Placed. Drag to move; Shift-click to select more.");
+  }
+  cancelPlacement() {
+    if (this.preview) {
+      this.preview.g.removeFromParent();
+      dispose(this.preview.g);
+      this.preview = null;
+    }
+    this.onVisual?.();
+  }
+  alignedPosition(x, z) {
+    this.guides = [];
+    if (!this.snap || !this.selected) return [x, z];
+    x = Math.round(x / SNAP) * SNAP;
+    z = Math.round(z / SNAP) * SNAP;
+    const selected = this.selected,
+      def = selected.userData.def,
+      trial = { ...selected.userData.item, x, z },
+      b = bounds(footprint(trial, def));
+    const anchorsX = [b.left, (b.left + b.right) / 2, b.right],
+      anchorsZ = [b.top, (b.top + b.bottom) / 2, b.bottom];
+    const targetsX = [0, this.room.W],
+      targetsZ = [0, this.room.L];
+    for (const g of this.items.values())
+      if (!this.selectedIds.has(g.userData.item.id)) {
+        const q = bounds(footprint(g.userData.item, g.userData.def));
+        targetsX.push(q.left, (q.left + q.right) / 2, q.right);
+        targetsZ.push(q.top, (q.top + q.bottom) / 2, q.bottom);
+      }
+    const closest = (a, t) =>
+      a
+        .flatMap((v) => t.map((w) => ({ delta: w - v, at: w })))
+        .filter((v) => Math.abs(v.delta) < 0.07)
+        .sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
+    const sx = closest(anchorsX, targetsX),
+      sz = closest(anchorsZ, targetsZ);
+    if (sx) {
+      x += sx.delta;
+      this.guides.push({ axis: "x", at: sx.at });
+    }
+    if (sz) {
+      z += sz.delta;
+      this.guides.push({ axis: "z", at: sz.at });
+    }
+    return [x, z];
+  }
+  beginDrag(x, z, source = "3d") {
+    if (!this.selected) return;
+    this.drag = {
+      source,
+      start: [x, z],
+      original: this.serialize(),
+      positions: this.selection.map((g) => ({ ...g.userData.item })),
+      anchor: { ...this.selected.userData.item },
+      moved: false,
+    };
+  }
+  dragTo(x, z) {
+    if (!this.drag) return;
+    const d = this.drag,
+      [nx, nz] = this.alignedPosition(
+        d.anchor.x + x - d.start[0],
+        d.anchor.z + z - d.start[1],
+      );
+    const dx = nx - d.anchor.x,
+      dz = nz - d.anchor.z;
+    let trials = d.positions.map((it) => ({
+      ...it,
+      x: it.x + dx,
+      z: it.z + dz,
+    }));
+    if (trials.length === 1 && CATALOG_BY_TYPE[trials[0].type].wallMounted)
+      this.snapToWall(
+        trials[0],
+        itemDef(CATALOG_BY_TYPE[trials[0].type], trials[0]),
+      );
+    const valid = (candidates) =>
+      candidates.every((it) =>
+        this.isInside(it, itemDef(CATALOG_BY_TYPE[it.type], it)),
+      );
+    if (!valid(trials)) {
+      const alongX = trials.map((it) => ({
+        ...it,
+        z: this.items.get(it.id).userData.item.z,
+      }));
+      const alongZ = trials.map((it) => ({
+        ...it,
+        x: this.items.get(it.id).userData.item.x,
+      }));
+      trials = valid(alongX) ? alongX : valid(alongZ) ? alongZ : [];
+    }
+    if (trials.length) {
+      // Moving doesn't rebuild geometry on every frame.
+      for (const it of trials) {
+        const g = this.items.get(it.id);
+        g.userData.item = it;
+        this.applyTransform(g);
+      }
+      d.moved = true;
+      this.onVisual?.();
+    }
+  }
+  finishDrag(cancel = false) {
+    if (!this.drag) return;
+    const d = this.drag;
+    this.drag = null;
+    this.guides = [];
+    this.getControls().enabled = this.enabled;
+    this.dom.style.cursor = "";
+    if (cancel) {
+      this.load(d.original, [...this.selectedIds]);
+      this.notifySelection();
+    } else if (d.moved) {
+      this.notifySelection();
+      this.onChange();
+    }
+    this.onVisual?.();
+  }
   setPointer(e) {
     const r = this.dom.getBoundingClientRect();
-    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.pointer.set(
+      ((e.clientX - r.left) / r.width) * 2 - 1,
+      (-(e.clientY - r.top) / r.height) * 2 + 1,
+    );
     this.ray.setFromCamera(this.pointer, this.getCamera());
   }
-
+  groundPoint() {
+    return this.ray.ray.intersectPlane(
+      new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
+      new THREE.Vector3(),
+    );
+  }
   pickItem() {
-    const hits = this.ray.intersectObjects(this.itemsGroup.children, true);
-    for (const h of hits) {
+    for (const h of this.ray.intersectObjects(this.itemsGroup.children, true)) {
       let o = h.object;
       if (!o.userData.item) continue;
       while (o.parent && o.parent !== this.itemsGroup) o = o.parent;
@@ -266,133 +515,118 @@ export class Editor {
     }
     return null;
   }
-
   pickWall() {
     const rg = this.getRoomGroup();
     if (!rg) return null;
-    const hits = this.ray.intersectObjects(rg.children, true);
-    for (const h of hits) {
+    for (const h of this.ray.intersectObjects(rg.children, true)) {
+      let o = h.object,
+        visible = true;
+      while (o) {
+        if (!o.visible) visible = false;
+        o = o.parent;
+      }
+      if (!visible) continue;
       if (h.object.userData.wallId) return h.object.userData.wallId;
-      if (h.object.userData.kind === 'floor') return null;
+      if (h.object.userData.kind === "floor") return null;
     }
     return null;
   }
-
   onDown(e) {
     if (e.button !== 0 || !this.enabled) return;
     this.setPointer(e);
+    if (this.preview) {
+      e.stopImmediatePropagation();
+      const p = this.groundPoint();
+      if (p) this.updatePlacement(p.x, p.z);
+      this.placePreview();
+      return;
+    }
     this.downPos = [e.clientX, e.clientY];
     const g = this.pickItem();
     if (!g) return;
     e.stopImmediatePropagation();
-    this.select(g);
-    const d = g.userData.item;
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(d.elevation ?? 0));
-    const hit = new THREE.Vector3();
-    if (!this.ray.ray.intersectPlane(plane, hit)) return;
-    this.drag = { g, plane, offset: new THREE.Vector3(d.x - hit.x, 0, d.z - hit.z), moved: false };
-    this.getControls().enabled = false;
-    this.dom.style.cursor = 'grabbing';
+    if (e.shiftKey) {
+      this.select(g, true, true);
+      return;
+    }
+    if (!this.selectedIds.has(g.userData.item.id)) this.select(g);
+    const p = this.groundPoint();
+    if (p) {
+      this.beginDrag(p.x, p.z);
+      this.getControls().enabled = false;
+      this.dom.style.cursor = "grabbing";
+    }
   }
-
   onMove(e) {
-    if (!this.drag) return;
+    if (this.drag?.source === "plan") return;
+    if (
+      !this.enabled ||
+      (!this.drag && !this.preview) ||
+      (e.target !== this.dom && !this.drag)
+    )
+      return;
     this.setPointer(e);
-    const hit = new THREE.Vector3();
-    if (!this.ray.ray.intersectPlane(this.drag.plane, hit)) return;
-    const { g, offset } = this.drag;
-    const d = g.userData.item;
-    const def = g.userData.def;
-    let nx = hit.x + offset.x;
-    let nz = hit.z + offset.z;
-    if (this.snap) {
-      nx = Math.round(nx / SNAP) * SNAP;
-      nz = Math.round(nz / SNAP) * SNAP;
-    }
-    const trial = { ...d, x: nx, z: nz };
-    if (def.wallMounted) {
-      this.snapToWall(trial, def);
-    } else if (!this.isInside(trial, def)) {
-      // Slide along whichever axis still fits so items glide along walls.
-      const tx = { ...d, x: nx };
-      const tz = { ...d, z: nz };
-      if (this.isInside(tx, def)) Object.assign(trial, { x: nx, z: d.z });
-      else if (this.isInside(tz, def)) Object.assign(trial, { x: d.x, z: nz });
-      else return;
-    }
-    if (trial.x === d.x && trial.z === d.z && trial.rot === d.rot) return;
-    Object.assign(d, trial);
-    this.applyTransform(g);
-    this.drag.moved = true;
+    const p = this.groundPoint();
+    if (!p) return;
+    if (this.preview) this.updatePlacement(p.x, p.z);
+    else this.dragTo(p.x, p.z);
   }
-
   onUp(e) {
     if (this.drag) {
-      const moved = this.drag.moved;
-      this.drag = null;
-      this.getControls().enabled = true;
-      this.dom.style.cursor = '';
-      if (moved) {
-        this.onChange();
-        this.onSelect(this.selected.userData.item, this.selected.userData.def);
-      }
+      this.finishDrag();
+      this.downPos = null;
       return;
     }
     if (!this.downPos) return;
-    const dist = Math.hypot(e.clientX - this.downPos[0], e.clientY - this.downPos[1]);
+    const dist = Math.hypot(
+      e.clientX - this.downPos[0],
+      e.clientY - this.downPos[1],
+    );
     this.downPos = null;
-    if (dist > 4 || e.target !== this.dom) return;
+    if (dist > 4 || e.target !== this.dom || e.shiftKey || this.preview) return;
     this.setPointer(e);
-    const wall = this.pickWall();
+    if (this.pickItem()) return;
     this.select(null);
-    this.onWallSelect(wall);
+    this.onWallSelect(this.pickWall());
   }
-
   onKey(e) {
-    const tag = e.target.tagName;
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-    if (!this.selected || !this.enabled) return;
-    const d = this.selected.userData.item;
-    const def = this.selected.userData.def;
-    const step = e.shiftKey ? 0.25 : SNAP;
-    const nudge = (dx, dz) => {
-      const trial = { ...d, x: +(d.x + dx).toFixed(3), z: +(d.z + dz).toFixed(3) };
-      if (def.wallMounted) this.snapToWall(trial, def);
-      else if (!this.isInside(trial, def)) return;
-      this.updateSelected({ x: trial.x, z: trial.z, rot: trial.rot });
-    };
-    switch (e.key) {
-      case 'r':
-        this.rotateSelected(ROT_STEP);
-        break;
-      case 'R':
-        this.rotateSelected(-ROT_STEP);
-        break;
-      case 'Delete':
-      case 'Backspace':
-        this.deleteSelected();
-        break;
-      case 'd':
-        this.duplicateSelected();
-        break;
-      case 'Escape':
-        this.select(null);
-        break;
-      case 'ArrowLeft':
-        nudge(-step, 0);
-        break;
-      case 'ArrowRight':
-        nudge(step, 0);
-        break;
-      case 'ArrowUp':
-        nudge(0, -step);
-        break;
-      case 'ArrowDown':
-        nudge(0, step);
-        break;
-      default:
-        return;
+    if (
+      globalThis.document?.querySelector("dialog[open]") ||
+      e.target.closest?.('input,select,textarea,[contenteditable="true"]') ||
+      !this.enabled ||
+      e.metaKey ||
+      e.ctrlKey
+    )
+      return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      this.finishDrag(true);
+      this.cancelPlacement();
+      this.select(null);
+      return;
     }
-    e.preventDefault();
+    if (this.preview && e.key.toLowerCase() === "r") {
+      this.preview.data.rot += e.shiftKey ? -15 : 15;
+      this.updatePlacement(this.preview.data.x, this.preview.data.z);
+      e.preventDefault();
+      return;
+    }
+    if (!this.selected) return;
+    const step = e.shiftKey ? 0.25 : SNAP;
+    const actions = {
+      r: () => this.rotateSelected(15),
+      R: () => this.rotateSelected(-15),
+      d: () => this.duplicateSelected(),
+      Delete: () => this.deleteSelected(),
+      Backspace: () => this.deleteSelected(),
+      ArrowLeft: () => this.moveSelection(-step, 0),
+      ArrowRight: () => this.moveSelection(step, 0),
+      ArrowUp: () => this.moveSelection(0, -step),
+      ArrowDown: () => this.moveSelection(0, step),
+    };
+    if (actions[e.key]) {
+      e.preventDefault();
+      actions[e.key]();
+    }
   }
 }
