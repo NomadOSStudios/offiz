@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Offiz · Model viewer</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #e9e8e2;
+      color: #28312f;
+      font: 14px system-ui;
+    }
+    body {
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    .back-link {
+      color: #506d5b;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .back-link:hover {
+      text-decoration: underline;
+    }
+    a:focus-visible,
+    button:focus-visible,
+    select:focus-visible {
+      outline: 2px solid #506d5b;
+      outline-offset: 3px;
+    }
+    header {
+      padding: 22px 32px;
+      border-bottom: 1px solid #cccfc6;
+      display: flex;
+      align-items: center;
+      gap: 22px;
+    }
+    h1 {
+      font-size: 22px;
+      margin: 0;
+    }
+    header p {
+      margin: 0;
+      color: #758078;
+    }
+    button,
+    select {
+      font: inherit;
+      border: 1px solid #c8cec5;
+      border-radius: 7px;
+      padding: 9px;
+      background: #f8f8f2;
+      color: inherit;
+      cursor: pointer;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      flex: 1;
+      min-height: 0;
+    }
+    #stage {
+      position: relative;
+      overflow: hidden;
+    }
+    #caption {
+      position: absolute;
+      bottom: 32px;
+      left: 32px;
+      pointer-events: none;
+    }
+    h2 {
+      font-size: 30px;
+      margin: 0 0 4px;
+    }
+    #caption p {
+      color: #6c7871;
+      margin: 0;
+    }
+    .library {
+      overflow: auto;
+      border-left: 1px solid #cccfc6;
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      align-content: start;
+    }
+    .tile {
+      text-align: left;
+      padding: 8px;
+    }
+    .tile img {
+      width: 100%;
+      display: block;
+    }
+    .tile span {
+      display: block;
+      font-size: 12px;
+    }
+    .tile[aria-pressed="true"] {
+      border-color: #688675;
+      background: #d9e1d7;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    @media (max-width: 800px) {
+      header {
+        padding: 14px 18px;
+        gap: 12px;
+      }
+      header p {
+        display: none;
+      }
+      main {
+        grid-template-columns: 1fr 220px;
+      }
+      .library {
+        padding: 10px;
+        gap: 6px;
+      }
+      #caption {
+        left: 18px;
+        bottom: 18px;
+      }
+      h2 {
+        font-size: 22px;
+      }
+    }
+    @media (max-width: 540px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(300px, 1fr) 200px;
+      }
+      .library {
+        grid-template-columns: repeat(3, 1fr);
+        border-left: 0;
+        border-top: 1px solid #cccfc6;
+      }
+    }
+  </style>
+  <header>
+    <a class="back-link" href="./index.html">← Back to studio</a>
+    <h1>Model viewer</h1>
+    <p>Drag to orbit · Scroll to zoom</p>
+    <select aria-label="Model category">
+      <option>All categories</option></select
+    ><button id="fit">Fit model</button>
+  </header>
+  <main>
+    <div id="stage">
+      <div id="caption">
+        <h2 id="name"></h2>
+        <p id="detail"></p>
+      </div>
+    </div>
+    <aside class="library" aria-label="Models"></aside>
+  </main>
+  <script type="module" src="./src/model-viewer.js"></script>
+</html>

@@ -36,13 +36,34 @@ Open http://localhost:5173. `npm run preview` serves the production build.
 
 ## Plan and placement checks
 
+Use **Floor plan** in the top bar to design your own space. Start with the current
+room or choose **New plan**. Click each corner, then click the first point or press
+**Enter** to close the outline. Angled walls, concave shapes and adjoining rooms
+are supported. Hold **Shift** to keep a new wall horizontal or vertical.
+
+Drag corners to reshape rooms, or select a corner to enter exact coordinates.
+Select a wall to add a midpoint corner. **Door** and **Window** place openings
+along a wall; drag them or edit their offset, width and height in the inspector.
+Doors have hinge and swing choices; windows have a sill height. Shared walls
+become a single 3D wall, and shared corners move together.
+
+The drawing has its own undo history. **Apply floor plan** builds the space in 3D
+and lets you retain existing furniture or start empty; the main Undo restores the
+previous layout. Retained furniture outside the new space is flagged by Layout
+checks, and wall-mounted items snap to the new walls. Each room has its own name
+and floor finish. Custom plans are included in autosave, alternatives and JSON.
+
+Dimensions in the drawing follow wall centre lines; usable floors and placement
+bounds account for wall thickness. The drawing supports up to 30 rooms and 150
+openings within a 50 × 50 metre area. Each room is one closed polygon without holes.
+
 Plan is an editable vector drawing with flat furniture footprints, a half-metre
 grid, metre rulers, dimension lines and door swings. Select one object to see its
 clearance to surrounding walls. Scroll to zoom, drag empty space to pan, or use
 **Fit** to frame the room. The Dimensions toggle also hides rulers and clearances.
 
 All edits—dragging, typing, resizing, rotation, duplication and placement—check
-room boundaries and ceiling height. Room changes reject newly stranded furniture.
+room boundaries and ceiling height. Dimension changes reject newly stranded furniture.
 Existing imported problems remain visible so they can be corrected.
 
 The Layout checks panel highlights footprint overlaps and blocked door swings in
@@ -83,6 +104,24 @@ floor. All of these measurements are editable.
 X runs along the window wall; Z runs from the window toward the entrance. Daylight
 is an illustrative time-of-day simulation, not a location/date-based sun study.
 
+## Furniture models
+
+The catalog uses local parametric models with rounded edges, upholstered cushions
+and seams, curved leaves, recessed bowls, cabinet hardware and desktop details.
+Wood, woven fabric, mesh and ceramic surfaces use small procedural textures; no
+external model or texture downloads are needed. Library thumbnails render the same
+geometry and materials as the room. Existing layouts get the new models automatically.
+
+Dimensions describe each item's complete placement envelope, including its
+hardware. Geometry fits inside that envelope when resized. Small details are
+batched by material to keep draw calls bounded, and each item's geometry and
+materials remain independent for recolouring, previews and disposal.
+
+Click **Model viewer** below the Furniture heading to inspect pieces in a new tab.
+The viewer provides orbit controls and category filters without changing the saved
+layout. It is also available directly at `models.html` in both development and
+production builds. **Back to studio** returns to the planner.
+
 ## Code
 
 | Module | Responsibility |
@@ -92,15 +131,21 @@ is an illustrative time-of-day simulation, not a location/date-based sun study.
 | `geometry.js` | Shared footprint containment, overlap and door-swing checks |
 | `history.js` | Bounded, branching undo/redo snapshots |
 | `plan.js` | Interactive SVG plan, dimensions, rulers and SVG/PNG exports |
+| `floorplan-editor.js`, `floorplan-model.js` | Room drawing, shared walls, openings, polygon validation and walkable geometry |
 | `ui.js`, `style.css` | Library, contextual inspector, dialogs and responsive layout |
 | `thumbnails.js` | Local 3D catalog thumbnails |
 | `store.js` | Defaults, validated imports, autosave and saved alternatives |
-| `room.js`, `catalog.js` | Parametric room and furniture geometry |
+| `room.js`, `catalog.js` | Room geometry, furniture definitions and placement envelopes |
+| `furniture.js`, `model-kit.js` | Detailed furniture, shared construction helpers and procedural surfaces |
 | `lighting.js`, `textures.js`, `photo.js` | Lighting, procedural materials and photo rendering |
 
 `tests/planner.test.js` covers history branching, concave containment, rotation,
 group operations, drag transactions, wall sliding, overlap exceptions, door
 conflicts, import validation and standalone SVG output.
+`tests/models.test.js` covers catalog geometry, resize bounds, rendering budgets,
+independent finishes, recessed sinks and visible frame insets.
+`tests/floorplan.test.js` covers custom room shapes, shared walls, openings,
+walkthrough boundaries, legacy conversion, history and JSON/SVG preservation.
 
 ## About
 

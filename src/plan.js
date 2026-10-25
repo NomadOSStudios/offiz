@@ -1,3 +1,4 @@
+import { interiorPoint, planWalls } from "./floorplan-model.js";
 import { roomPolygons, polygonArea } from "./room.js";
 import { footprint, bounds, doorZones, pointInside } from "./geometry.js";
 import { itemDef, CATALOG_BY_TYPE } from "./catalog.js";
@@ -40,33 +41,57 @@ export function planMarkup(
     L = p.L;
   const bad = new Set(warnings.flatMap((w) => w.ids));
   let out = `<rect x="-2" y="-2" width="${W + 4}" height="${L + 4}" fill="#f4f5f0"/>`;
-  for (const [name, poly] of Object.entries({
-    Office: p.office,
-    Kitchen: p.kitchen,
-    Bathroom: p.bathroom,
-  }))
-    if (poly) {
-      out += `<polygon points="${points(poly)}" fill="${name === "Office" ? "#fffefa" : "#eef1e9"}" stroke="#3e5148" stroke-width=".07" stroke-linejoin="round"/>`;
-      const b = bounds(poly);
-      out += text(
-        (b.left + b.right) / 2,
-        name === "Office" ? (L - p.nd) * 0.55 : (b.top + b.bottom) / 2,
-        `${name} · ${polygonArea(poly).toFixed(1)} m²`,
-        'fill="#9aa69e" font-size=".18"',
-      );
-    }
-  // Thin metre grid confined to the office's L-shaped outline.
-  out += `<defs><clipPath id="office-clip"><polygon points="${points(p.office)}"/></clipPath></defs><g clip-path="url(#office-clip)" stroke="#9baa9e" stroke-opacity=".14" stroke-width=".008">`;
+  for (const entry of p.rooms) {
+    const poly = entry.points,
+      [x, z] = interiorPoint(poly);
+    out += `<polygon points="${points(poly)}" fill="${entry.id === "office" ? "#fffefa" : "#eef1e9"}" stroke="#3e5148" stroke-width="${r.floorPlan ? 0 : 0.07}" stroke-linejoin="round"/>`;
+    out += text(
+      x,
+      z,
+      `${entry.name} · ${polygonArea(entry.interior || poly).toFixed(1)} m²`,
+      'fill="#9aa69e" font-size=".18"',
+    );
+  }
+  out += `<defs><clipPath id="office-clip">${p.rooms.map((r) => `<polygon points="${points(r.points)}"/>`).join("")}</clipPath></defs><g clip-path="url(#office-clip)" stroke="#9baa9e" stroke-opacity=".14" stroke-width=".008">`;
   for (let x = 0.5; x < W; x += 0.5) out += line([x, 0], [x, L]);
   for (let z = 0.5; z < L; z += 0.5) out += line([0, z], [W, z]);
   out += "</g>";
-  out += line([0.08, 0], [W - 0.08, 0], 'stroke="#8ec3c9" stroke-width=".055"');
-  out += text(
-    W / 2,
-    0.23,
-    "WINDOW",
-    'fill="#72949a" font-size=".14" letter-spacing=".03"',
-  );
+  if (r.floorPlan) {
+    for (const wall of planWalls(r.floorPlan)) {
+      out += line(
+        wall.a,
+        wall.b,
+        `stroke="#3e5148" stroke-width="${r.wallThickness}" stroke-linecap="square"`,
+      );
+      const u = [
+        (wall.b[0] - wall.a[0]) / wall.length,
+        (wall.b[1] - wall.a[1]) / wall.length,
+      ];
+      for (const o of wall.openings) {
+        const a = [wall.a[0] + u[0] * o.from, wall.a[1] + u[1] * o.from],
+          b = [wall.a[0] + u[0] * o.to, wall.a[1] + u[1] * o.to];
+        out += line(
+          a,
+          b,
+          `stroke="#fffefa" stroke-width="${r.wallThickness + 0.015}"`,
+        );
+        if (o.kind === "window")
+          out += line(a, b, `stroke="#73b6c1" stroke-width=".055"`);
+      }
+    }
+  } else {
+    out += line(
+      [0.08, 0],
+      [W - 0.08, 0],
+      'stroke="#8ec3c9" stroke-width=".055"',
+    );
+    out += text(
+      W / 2,
+      0.23,
+      "WINDOW",
+      'fill="#72949a" font-size=".14" letter-spacing=".03"',
+    );
+  }
   for (const door of doorZones(r)) {
     const h = door.hinge,
       end = [
@@ -154,7 +179,7 @@ export function planMarkup(
       const it = state.items.find((it) => selected.has(it.id));
       if (it) {
         const b = bounds(footprint(it, itemDef(CATALOG_BY_TYPE[it.type], it))),
-          poly = [p.office, p.kitchen, p.bathroom]
+          poly = Object.values(p.polygons)
             .filter(Boolean)
             .find((poly) => pointInside([it.x, it.z], poly));
         if (poly) {
@@ -164,17 +189,17 @@ export function planMarkup(
             const a = poly[i],
               v = poly[(i + 1) % poly.length];
             if (
-              a[0] === v[0] &&
+              Math.abs(a[1] - v[1]) > 1e-6 &&
               it.z >= Math.min(a[1], v[1]) &&
               it.z <= Math.max(a[1], v[1])
             )
-              xs.push(a[0]);
+              xs.push(a[0] + ((v[0] - a[0]) * (it.z - a[1])) / (v[1] - a[1]));
             if (
-              a[1] === v[1] &&
+              Math.abs(a[0] - v[0]) > 1e-6 &&
               it.x >= Math.min(a[0], v[0]) &&
               it.x <= Math.max(a[0], v[0])
             )
-              zs.push(a[1]);
+              zs.push(a[1] + ((v[1] - a[1]) * (it.x - a[0])) / (v[0] - a[0]));
           }
           const left = Math.max(...xs.filter((v) => v <= b.left)),
             right = Math.min(...xs.filter((v) => v >= b.right)),

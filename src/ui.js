@@ -97,6 +97,17 @@ export function createUI(h) {
       el("span", { class: "eyebrow" }, ["MAKE ROOM FOR IDEAS"]),
       el("h2", {}, ["Furniture"]),
       el("p", { class: "hint" }, ["Choose a piece, then click to place it."]),
+      el(
+        "a",
+        {
+          class: "model-viewer-link",
+          href: "./models.html",
+          target: "_blank",
+          rel: "noopener",
+          "aria-label": "Open model viewer (new tab)",
+        },
+        ["Model viewer", el("span", { "aria-hidden": "true" }, ["↗"])],
+      ),
     ]),
     el("div", { class: "catalog-search" }, [search, filter]),
     grid,
@@ -337,7 +348,9 @@ export function createUI(h) {
   function renderMaterials() {
     const r = currentRoom;
     if (!r) return;
-    const target = selectedWall ? WALL_NAMES[selectedWall] : "All walls",
+    const target = selectedWall
+        ? WALL_NAMES[selectedWall] || "Selected wall"
+        : "All walls",
       value = selectedWall
         ? r.wallColors[selectedWall] || r.wallColor
         : r.wallColor;
@@ -383,18 +396,27 @@ export function createUI(h) {
         ),
       );
     const sections = [section("Wall paint", paintChildren)];
-    for (const [label, key, value] of [
-      ["Office floor", "floor", r.floor],
-      ["Kitchen floor", "kitchenFloor", r.kitchenFloor],
-      ["Bathroom floor", "bathroom", r.bathroom.floor],
-    ]) {
+    const floors = r.floorPlan
+      ? r.floorPlan.rooms.map((room) => [
+          `${room.name} floor`,
+          room.id,
+          room.floor,
+        ])
+      : [
+          ["Office floor", "floor", r.floor],
+          ["Kitchen floor", "kitchenFloor", r.kitchenFloor],
+          ["Bathroom floor", "bathroom", r.bathroom.floor],
+        ];
+    for (const [label, key, value] of floors) {
       const grid = el("div", { class: "material-grid" });
       for (const [k, f] of Object.entries(FLOORS)) {
         const b = button(
           "",
           () =>
             h.onRoomChange((m) => {
-              if (key === "bathroom") m.bathroom.floor = k;
+              if (m.floorPlan)
+                m.floorPlan.rooms.find((room) => room.id === key).floor = k;
+              else if (key === "bathroom") m.bathroom.floor = k;
               else m[key] = k;
             }),
           "material-card" + (k === value ? " active" : ""),
@@ -429,69 +451,97 @@ export function createUI(h) {
       });
     const f = (label, path, value, opts) =>
       field(label, num(value, opts, change(path)));
-    panels.Room.replaceChildren(
-      el("div", { class: "panel-heading" }, [
-        el("span", { class: "eyebrow" }, ["THE FOUNDATIONS"]),
-        el("h2", {}, ["Room dimensions"]),
-        el("p", { class: "hint" }, ["All measurements are in metres."]),
-      ]),
-      section("Room envelope", [
-        f("Width · m", ["width"], r.width, { min: 2 }),
-        f("Length · m", ["length"], r.length, { min: 2 }),
-        f("Ceiling · m", ["ceiling"], r.ceiling, { min: 2.1, max: 10 }),
-        f("Notch width · m", ["notch", "width"], r.notch.width, { min: 0.8 }),
-        f("Notch depth · m", ["notch", "depth"], r.notch.depth, { min: 1 }),
-      ]),
-      section(
-        "Window wall",
-        [
-          f("Sill · m", ["window", "sill"], r.window.sill),
-          f("Top · m", ["window", "top"], r.window.top),
-        ],
-        false,
-      ),
-      section(
-        "Entrance door",
-        [
-          f("From left · m", ["entranceDoor", "from"], r.entranceDoor.from),
-          f("Width · m", ["entranceDoor", "width"], r.entranceDoor.width, {
-            min: 0.6,
+    if (r.floorPlan) {
+      panels.Room.replaceChildren(
+        el("div", { class: "panel-heading" }, [
+          el("span", { class: "eyebrow" }, ["YOUR FLOOR PLAN"]),
+          el("h2", {}, ["Rooms & walls"]),
+          el("p", { class: "hint" }, [
+            `${r.floorPlan.rooms.length} rooms · ${r.floorPlan.openings.length} openings`,
+          ]),
+          button("Edit floor plan", () => h.onFloorPlan(), "primary"),
+        ]),
+        section("Building", [
+          f("Ceiling · m", ["ceiling"], r.ceiling, { min: 2.1, max: 10 }),
+          f("Wall thickness · m", ["wallThickness"], r.wallThickness, {
+            min: 0.05,
+            max: 0.5,
+            step: 0.01,
           }),
-        ],
-        false,
-      ),
-      section(
-        "Kitchen door",
-        [
-          f("From corner · m", ["kitchenDoor", "from"], r.kitchenDoor.from, {
-            min: 0.1,
-          }),
-          f("Width · m", ["kitchenDoor", "width"], r.kitchenDoor.width, {
-            min: 0.6,
-          }),
-        ],
-        false,
-      ),
-      section(
-        "Bathroom",
-        [
-          f("Width · m", ["bathroom", "width"], r.bathroom.width),
-          f(
-            "Door offset · m",
-            ["bathroom", "door", "from"],
-            r.bathroom.door.from,
-          ),
-          f(
-            "Door width · m",
-            ["bathroom", "door", "width"],
-            r.bathroom.door.width,
-            { min: 0.6 },
-          ),
-          el("p", { class: "hint" }, ["Set bathroom width to 0 to remove it."]),
-        ],
-        false,
-      ),
-    );
+        ]),
+        section(
+          "Rooms",
+          r.floorPlan.rooms.map((room) => el("p", {}, [room.name])),
+        ),
+      );
+    } else {
+      panels.Room.replaceChildren(
+        el("div", { class: "panel-heading" }, [
+          el("span", { class: "eyebrow" }, ["THE FOUNDATIONS"]),
+          el("h2", {}, ["Room dimensions"]),
+          el("p", { class: "hint" }, ["All measurements are in metres."]),
+          button("Draw your own floor plan", () => h.onFloorPlan(), "primary"),
+        ]),
+        section("Room envelope", [
+          f("Width · m", ["width"], r.width, { min: 2 }),
+          f("Length · m", ["length"], r.length, { min: 2 }),
+          f("Ceiling · m", ["ceiling"], r.ceiling, { min: 2.1, max: 10 }),
+          f("Notch width · m", ["notch", "width"], r.notch.width, { min: 0.8 }),
+          f("Notch depth · m", ["notch", "depth"], r.notch.depth, { min: 1 }),
+        ]),
+        section(
+          "Window wall",
+          [
+            f("Sill · m", ["window", "sill"], r.window.sill),
+            f("Top · m", ["window", "top"], r.window.top),
+          ],
+          false,
+        ),
+        section(
+          "Entrance door",
+          [
+            f("From left · m", ["entranceDoor", "from"], r.entranceDoor.from),
+            f("Width · m", ["entranceDoor", "width"], r.entranceDoor.width, {
+              min: 0.6,
+            }),
+          ],
+          false,
+        ),
+        section(
+          "Kitchen door",
+          [
+            f("From corner · m", ["kitchenDoor", "from"], r.kitchenDoor.from, {
+              min: 0.1,
+            }),
+            f("Width · m", ["kitchenDoor", "width"], r.kitchenDoor.width, {
+              min: 0.6,
+            }),
+          ],
+          false,
+        ),
+        section(
+          "Bathroom",
+          [
+            f("Width · m", ["bathroom", "width"], r.bathroom.width),
+            f(
+              "Door offset · m",
+              ["bathroom", "door", "from"],
+              r.bathroom.door.from,
+            ),
+            f(
+              "Door width · m",
+              ["bathroom", "door", "width"],
+              r.bathroom.door.width,
+              { min: 0.6 },
+            ),
+            el("p", { class: "hint" }, [
+              "Set bathroom width to 0 to remove it.",
+            ]),
+          ],
+          false,
+        ),
+      );
+    }
     renderMaterials();
     const time = el("output", { class: "time-output" }),
       slider = el("input", {
@@ -529,7 +579,7 @@ export function createUI(h) {
           el("span", {}, ["20:00"]),
         ]),
         el("p", { class: "hint" }, [
-          "Explore a simulated day through the window wall.",
+          "Explore a simulated day through your windows.",
         ]),
       ]),
       section("Interior lights", [

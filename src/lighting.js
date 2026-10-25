@@ -1,5 +1,6 @@
 // Sun through the window wall, sky ambient, and ceiling lights.
 import * as THREE from "three";
+import { inside, interiorPoint } from "./floorplan-model.js";
 
 const SKY_DAY = new THREE.Color("#dfe9f3");
 const SKY_NIGHT = new THREE.Color("#1b1f2a");
@@ -44,7 +45,7 @@ export function createLighting(scene) {
     ceiling.clear();
     panels.length = 0;
     const { W, L, nw, nd } = room;
-    const spots = [
+    let spots = [
       [W / 2 - 1.6, (L - nd) / 2 - 1.2],
       [W / 2 + 1.6, (L - nd) / 2 - 1.2],
       [W / 2 - 1.6, (L - nd) / 2 + 1.4],
@@ -58,6 +59,38 @@ export function createLighting(scene) {
           poly.reduce((s, p) => s + p[0], 0) / poly.length,
           poly.reduce((s, p) => s + p[1], 0) / poly.length,
         ]);
+    }
+    if (room.custom) {
+      spots = [];
+      for (const poly of Object.values(room.polygons)) {
+        const xs = poly.map((p) => p[0]),
+          zs = poly.map((p) => p[1]),
+          minX = Math.min(...xs),
+          minZ = Math.min(...zs),
+          w = Math.max(...xs) - minX,
+          d = Math.max(...zs) - minZ;
+        const nx = Math.max(1, Math.ceil(w / 3)),
+          nz = Math.max(1, Math.ceil(d / 3)),
+          before = spots.length;
+        for (let i = 0; i < nx; i++)
+          for (let j = 0; j < nz; j++) {
+            const p = [
+              minX + (w * (i + 0.5)) / nx,
+              minZ + (d * (j + 0.5)) / nz,
+            ];
+            if (
+              [
+                [-0.3, -0.3],
+                [0.3, -0.3],
+                [0.3, 0.3],
+                [-0.3, 0.3],
+              ].every(([x, z]) => inside([p[0] + x, p[1] + z], poly))
+            )
+              spots.push(p);
+          }
+        if (spots.length === before) spots.push(interiorPoint(poly));
+      }
+      spots = spots.slice(0, 64);
     }
     for (const [x, z] of spots) {
       const panel = new THREE.Mesh(
@@ -81,7 +114,7 @@ export function createLighting(scene) {
     const day = Math.sin(Math.PI * t);
     const elev = day * THREE.MathUtils.degToRad(62);
     const az = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(-70, 70, t));
-    const R = 30;
+    const R = Math.max(30, room.W, room.L);
     const cx = room.W / 2;
     const cz = room.L / 2;
     sun.position.set(
@@ -90,6 +123,15 @@ export function createLighting(scene) {
       cz - Math.cos(az) * Math.cos(elev) * R,
     );
     sun.target.position.set(cx, 0, cz);
+    const extent = Math.max(10, room.W * 0.75, room.L * 0.75);
+    Object.assign(sun.shadow.camera, {
+      left: -extent,
+      right: extent,
+      top: extent,
+      bottom: -extent,
+      far: R * 3,
+    });
+    sun.shadow.camera.updateProjectionMatrix();
     sun.intensity = 2.8 * day;
     sun.color.copy(SUN_LOW).lerp(SUN_HIGH, Math.min(1, day * 1.6));
     // The environment map carries most of the ambient now; the hemisphere

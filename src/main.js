@@ -38,6 +38,13 @@ import { History } from "./history.js";
 import { layoutWarnings, footprint, pointInside } from "./geometry.js";
 import { CATALOG_BY_TYPE, itemDef } from "./catalog.js";
 import { PlanView, planSVG, exportPlan } from "./plan.js";
+import { openFloorPlanEditor } from "./floorplan-editor.js";
+import {
+  interiorPoint,
+  customDoorZones,
+  walkablePlan,
+  inside,
+} from "./floorplan-model.js";
 const $ = (id) => document.getElementById(id);
 let state = loadState();
 state.views ??= [];
@@ -130,7 +137,8 @@ function roomInfo(cfg = state.room) {
   const p = roomPolygons(cfg);
   return {
     ...p,
-    polygons: { office: p.office, kitchen: p.kitchen, bathroom: p.bathroom },
+    polygons: p.polygons,
+    custom: !!cfg.floorPlan,
     ceiling: cfg.ceiling,
   };
 }
@@ -156,8 +164,12 @@ function refreshVisual() {
   ui?.showWarnings(warnings);
   ui?.renderItems(state.items, editor.selectedIds);
   plan?.render();
-  $("sceneStats").textContent =
-    `${state.items.length} pieces · ${polygonArea(room.polygons.office).toFixed(1)} m² office`;
+  $("sceneStats").textContent = `${state.items.length} pieces · ${Object.values(
+    room.polygons,
+  )
+    .filter(Boolean)
+    .reduce((sum, p) => sum + polygonArea(p), 0)
+    .toFixed(1)} m²`;
   disposeGroup(diagnosticHelpers);
   diagnosticHelpers.clear();
   scene.add(diagnosticHelpers);
@@ -281,9 +293,44 @@ function setView(next) {
     b.setAttribute("aria-pressed", String(b.dataset.view === next));
   });
   if (interior) {
-    const d = state.room.entranceDoor;
-    persp.position.set(d.from + d.width / 2, 1.6, state.room.length - 0.35);
-    controls.target.set(state.room.width / 2, 1.4, state.room.length / 2 - 1);
+    if (state.room.floorPlan) {
+      const first = state.room.floorPlan.rooms[0],
+        center = interiorPoint(first.points);
+      const door = customDoorZones(state.room.floorPlan).find((d) => {
+        const p = [
+          d.hinge[0] + (d.along[0] * d.width) / 2 + d.inward[0] * 0.4,
+          d.hinge[1] + (d.along[1] * d.width) / 2 + d.inward[1] * 0.4,
+        ];
+        return (
+          inside(p, first.points) &&
+          walkablePlan(state.room.floorPlan, p, state.room.wallThickness)
+        );
+      });
+      const start = door
+        ? [
+            door.hinge[0] +
+              (door.along[0] * door.width) / 2 +
+              door.inward[0] * 0.4,
+            door.hinge[1] +
+              (door.along[1] * door.width) / 2 +
+              door.inward[1] * 0.4,
+          ]
+        : center;
+      persp.position.set(
+        start[0],
+        Math.min(1.6, state.room.ceiling - 0.25),
+        start[1],
+      );
+      controls.target.set(
+        door ? center[0] : center[0] + 0.5,
+        1.4,
+        door ? center[1] : center[1] - 0.5,
+      );
+    } else {
+      const d = state.room.entranceDoor;
+      persp.position.set(d.from + d.width / 2, 1.6, state.room.length - 0.35);
+      controls.target.set(state.room.width / 2, 1.4, state.room.length / 2 - 1);
+    }
     if (next === "walk") syncWalk();
     else controls.update();
   } else if (next === "3d") fitCamera();
@@ -365,7 +412,32 @@ function editable() {
   if (photo?.active) exitPhoto();
   if (view === "walk") setView("3d");
 }
+function designFloorPlan() {
+  editable();
+  editor.finishDrag();
+  editor.cancelPlacement();
+  openFloorPlanEditor(snapshot(), (nextRoom, keepFurniture) => {
+    validateRoom(nextRoom);
+    const next = {
+      ...snapshot(),
+      room: nextRoom,
+      items: keepFurniture ? editor.serialize() : [],
+    };
+    const oldRoom = editor.room;
+    editor.setRoom(roomInfo(nextRoom));
+    for (const it of next.items) {
+      const def = itemDef(CATALOG_BY_TYPE[it.type], it);
+      if (def.wallMounted) editor.snapToWall(it, def);
+    }
+    editor.setRoom(oldRoom);
+    applyState(next, { fit: true });
+    setView("3d");
+    message("Floor plan applied. Undo restores the previous layout.");
+  });
+}
+$("floorPlanBtn").onclick = designFloorPlan;
 ui = createUI({
+  onFloorPlan: () => designFloorPlan(),
   onSpawn: (def) => {
     editable();
     editor.beginPlacement(def);
@@ -541,18 +613,29 @@ function canWalk(x, z) {
     nz = r.length - r.notch.depth,
     bx = r.width - r.bathroom.width,
     margin = 0.13;
-  if (x < margin || z < margin || x > r.width - margin || z > r.length - margin)
-    return false;
-  if (x > nx - margin && z > nz - margin && z < nz + 0.1 + margin) return false;
-  if (Math.abs(x - (nx + 0.05)) < 0.05 + margin && z > nz) {
-    const start = nz + r.kitchenDoor.from;
-    if (z < start + margin || z > start + r.kitchenDoor.width - margin)
+  if (r.floorPlan) {
+    if (!walkablePlan(r.floorPlan, [x, z], r.wallThickness, margin))
       return false;
-  }
-  if (r.bathroom.width && Math.abs(x - bx) < 0.05 + margin && z > nz) {
-    const start = nz + 0.1 + r.bathroom.door.from;
-    if (z < start + margin || z > start + r.bathroom.door.width - margin)
+  } else {
+    if (
+      x < margin ||
+      z < margin ||
+      x > r.width - margin ||
+      z > r.length - margin
+    )
       return false;
+    if (x > nx - margin && z > nz - margin && z < nz + 0.1 + margin)
+      return false;
+    if (Math.abs(x - (nx + 0.05)) < 0.05 + margin && z > nz) {
+      const start = nz + r.kitchenDoor.from;
+      if (z < start + margin || z > start + r.kitchenDoor.width - margin)
+        return false;
+    }
+    if (r.bathroom.width && Math.abs(x - bx) < 0.05 + margin && z > nz) {
+      const start = nz + 0.1 + r.bathroom.door.from;
+      if (z < start + margin || z > start + r.bathroom.door.width - margin)
+        return false;
+    }
   }
   for (const g of editor.items.values()) {
     const d = g.userData.def,

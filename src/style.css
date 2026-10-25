@@ -270,6 +270,27 @@ p {
   padding-top: 7px;
   padding-bottom: 10px;
 }
+.model-viewer-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(129, 171, 149, 0.08);
+  color: var(--text);
+  font-size: 12px;
+  text-decoration: none;
+}
+.model-viewer-link:hover {
+  background: rgba(129, 171, 149, 0.17);
+  border-color: #718e7e;
+}
+.model-viewer-link:focus-visible {
+  outline: 2px solid #efcb78;
+  outline-offset: 3px;
+}
 .catalog-search select {
   font-size: 11px;
   background: transparent;
@@ -929,5 +950,169 @@ dialog::backdrop {
   }
   .saved-row strong {
     min-width: 100%;
+  }
+}
+
+/* The floor-plan editor has its own draft history until Apply is pressed. */
+dialog.floorplan-dialog {
+  width: min(1240px, 96vw);
+  max-width: none;
+  height: min(880px, 94dvh);
+  max-height: 94dvh;
+  padding: 0;
+}
+.floorplan-dialog .dialog-head {
+  padding: 18px 24px;
+}
+.floorplan-dialog #dialogBody {
+  padding: 0;
+  height: calc(100% - 100px);
+}
+.floorplan-editor {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.floorplan-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.floorplan-tools .toggle {
+  margin: 0 8px;
+  font-size: 11px;
+}
+.floorplan-tools button.active {
+  background: #496554;
+  border-color: #80a38d;
+  color: #fff;
+}
+.floorplan-instructions {
+  padding: 7px 20px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  min-height: 34px;
+}
+.floorplan-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 258px;
+  flex: 1;
+  min-height: 180px;
+}
+.floorplan-stage {
+  min-height: 0;
+  background: #e4e9e1;
+  overflow: hidden;
+}
+.floorplan-drawing {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+}
+.floorplan-drawing [data-kind="point"],
+.floorplan-drawing [data-kind="opening"] {
+  cursor: grab;
+}
+.floorplan-drawing [data-kind="edge"],
+.floorplan-drawing [data-kind="room"] {
+  cursor: pointer;
+}
+.floorplan-drawing :focus-visible {
+  outline: none;
+  stroke: #d69721;
+  stroke-width: 0.09;
+}
+.floorplan-inspector {
+  padding: 17px;
+  border-left: 1px solid var(--border);
+  overflow: auto;
+}
+.floorplan-inspector h2 {
+  font-size: 20px;
+}
+.floorplan-inspector h3 {
+  line-height: 1.6;
+  margin-top: 14px;
+}
+.floorplan-inspector button {
+  margin: 4px 0;
+  width: 100%;
+  text-align: left;
+}
+.floorplan-field {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.floorplan-field input,
+.floorplan-field select {
+  width: 100%;
+}
+.floorplan-notice {
+  min-height: 28px;
+  padding: 4px 20px;
+  margin: 0;
+  font-size: 12px;
+  color: #efcb78;
+}
+.floorplan-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+.floorplan-footer label {
+  margin-right: auto;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .floorplan-dialog .dialog-head {
+    padding: 12px 16px;
+  }
+  .floorplan-dialog #dialogBody {
+    height: calc(100% - 88px);
+  }
+  .floorplan-workspace {
+    grid-template-columns: minmax(0, 1fr) 200px;
+  }
+  .floorplan-inspector {
+    padding: 10px;
+  }
+  .floorplan-tools {
+    gap: 4px;
+    padding: 8px;
+  }
+  .floorplan-tools button {
+    padding: 6px 8px;
+  }
+  .floorplan-footer {
+    padding: 8px;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 540px) {
+  .floorplan-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(200px, 1fr) 180px;
+    overflow: auto;
+  }
+  .floorplan-inspector {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .floorplan-instructions {
+    font-size: 11px;
+  }
+  #floorPlanBtn {
+    padding: 6px;
+    font-size: 11px;
   }
 }

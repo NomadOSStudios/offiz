@@ -1,17 +1,18 @@
 // Builds the room shell (walls, openings, floors, ceiling, dimension labels)
 // from the room config. Rebuilt whenever a room setting changes.
-import * as THREE from 'three';
-import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { getFloorTexture } from './textures.js';
+import * as THREE from "three";
+import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
+import { getFloorTexture } from "./textures.js";
+import { insetPolygon, planWalls, interiorPoint } from "./floorplan-model.js";
 
 export const WALL_NAMES = {
-  north: 'Window wall',
-  east: 'Right wall',
-  south: 'Entrance wall',
-  west: 'Left wall',
-  kitchenNorth: 'Long partition',
-  kitchenWest: 'Side partition (kitchen door)',
-  bathWall: 'Kitchen / bathroom wall',
+  north: "Window wall",
+  east: "Right wall",
+  south: "Entrance wall",
+  west: "Left wall",
+  kitchenNorth: "Long partition",
+  kitchenWest: "Side partition (kitchen door)",
+  bathWall: "Kitchen / bathroom wall",
 };
 
 // Interior partitions are this thick and sit inside the notch, so every
@@ -19,6 +20,24 @@ export const WALL_NAMES = {
 export const PARTITION = 0.1;
 
 export function roomPolygons(cfg) {
+  if (cfg.floorPlan) {
+    const rooms = cfg.floorPlan.rooms.map((r) => ({
+      ...r,
+      interior: insetPolygon(r.points, cfg.wallThickness / 2),
+    }));
+    return {
+      office: rooms[0].points,
+      kitchen: null,
+      bathroom: null,
+      W: cfg.width,
+      L: cfg.length,
+      nw: 0,
+      nd: 0,
+      bw: 0,
+      rooms,
+      polygons: Object.fromEntries(rooms.map((r) => [r.id, r.interior])),
+    };
+  }
   const W = cfg.width;
   const L = cfg.length;
   const pt = PARTITION;
@@ -50,12 +69,44 @@ export function roomPolygons(cfg) {
         [W - bw + pt / 2, L],
       ]
     : null;
-  return { office, kitchen, bathroom, W, L, nw, nd, bw };
+  return {
+    office,
+    kitchen,
+    bathroom,
+    W,
+    L,
+    nw,
+    nd,
+    bw,
+    polygons: { office, kitchen, bathroom },
+    rooms: [
+      { id: "office", name: "Office", points: office, floor: cfg.floor },
+      {
+        id: "kitchen",
+        name: "Kitchen",
+        points: kitchen,
+        floor: cfg.kitchenFloor,
+      },
+      ...(bathroom
+        ? [
+            {
+              id: "bathroom",
+              name: "Bathroom",
+              points: bathroom,
+              floor: cfg.bathroom.floor,
+            },
+          ]
+        : []),
+    ],
+  };
 }
 
 export function centroid(poly) {
   const n = poly.length;
-  return [poly.reduce((s, p) => s + p[0], 0) / n, poly.reduce((s, p) => s + p[1], 0) / n];
+  return [
+    poly.reduce((s, p) => s + p[0], 0) / n,
+    poly.reduce((s, p) => s + p[1], 0) / n,
+  ];
 }
 
 export function pointInPolygon([x, z], poly) {
@@ -63,7 +114,8 @@ export function pointInPolygon([x, z], poly) {
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const [xi, zi] = poly[i];
     const [xj, zj] = poly[j];
-    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)
+      inside = !inside;
   }
   return inside;
 }
@@ -78,7 +130,18 @@ export function polygonArea(poly) {
 
 // Wall segment a → b (plan coords). For the clockwise polygons above the
 // outward normal is (dz, -dx). Pieces are boxes so openings are simply gaps.
-function buildWall({ a, b, height, thickness, offset = 0, openings = [], material, extendStart = 0, extendEnd = 0, id }) {
+function buildWall({
+  a,
+  b,
+  height,
+  thickness,
+  offset = 0,
+  openings = [],
+  material,
+  extendStart = 0,
+  extendEnd = 0,
+  id,
+}) {
   const dx = b[0] - a[0];
   const dz = b[1] - a[1];
   const len = Math.hypot(dx, dz);
@@ -88,7 +151,7 @@ function buildWall({ a, b, height, thickness, offset = 0, openings = [], materia
   const nz = -ux;
   const g = new THREE.Group();
   g.userData = {
-    kind: 'wall',
+    kind: "wall",
     id,
     normal: [nx, nz],
     center: [(a[0] + b[0]) / 2 + nx * offset, (a[1] + b[1]) / 2 + nz * offset],
@@ -101,7 +164,10 @@ function buildWall({ a, b, height, thickness, offset = 0, openings = [], materia
     if (e - s <= 0.001 || y1 - y0 <= 0.001) return;
     // Floor-standing pieces sink into the slab so no seam shows at the base.
     if (y0 === 0) y0 = -0.05;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(e - s, y1 - y0, thickness), material);
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(e - s, y1 - y0, thickness),
+      material,
+    );
     const [px, pz] = at((s + e) / 2);
     m.position.set(px, (y0 + y1) / 2, pz);
     m.rotation.y = rotY;
@@ -129,17 +195,30 @@ function buildWall({ a, b, height, thickness, offset = 0, openings = [], materia
     const w = o.to - o.from;
     const [cx, cz] = at((o.from + o.to) / 2);
     const h = o.top - o.bottom;
-    if (o.kind === 'window') {
-      const glassMat = new THREE.MeshPhysicalMaterial({ color: '#bcd8f0', transparent: true, opacity: 0.22, roughness: 0.05, metalness: 0 });
+    if (o.kind === "window") {
+      const glassMat = new THREE.MeshPhysicalMaterial({
+        color: "#bcd8f0",
+        transparent: true,
+        opacity: 0.22,
+        roughness: 0.05,
+        metalness: 0,
+      });
       glassMat.userData.glass = true; // photo mode swaps this for real glass
       const glass = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.02), glassMat);
       glass.position.set(cx, (o.top + o.bottom) / 2, cz);
       glass.rotation.y = rotY;
       g.add(glass);
-      const fm = new THREE.MeshStandardMaterial({ color: '#3b3f45', roughness: 0.5, metalness: 0.4 });
+      const fm = new THREE.MeshStandardMaterial({
+        color: "#3b3f45",
+        roughness: 0.5,
+        metalness: 0.4,
+      });
       const frame = new THREE.Group();
       const bar = (bw, bh, bx, by) => {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, thickness * 0.5), fm);
+        const m = new THREE.Mesh(
+          new THREE.BoxGeometry(bw, bh, thickness * 0.5),
+          fm,
+        );
         m.position.set(bx, by, 0);
         m.castShadow = true;
         frame.add(m);
@@ -149,48 +228,81 @@ function buildWall({ a, b, height, thickness, offset = 0, openings = [], materia
       bar(0.06, h, -w / 2 + 0.03, 0);
       bar(0.06, h, w / 2 - 0.03, 0);
       const mullions = Math.max(0, Math.round(w / 1.3) - 1);
-      for (let i = 1; i <= mullions; i++) bar(0.04, h, -w / 2 + (w * i) / (mullions + 1), 0);
+      for (let i = 1; i <= mullions; i++)
+        bar(0.04, h, -w / 2 + (w * i) / (mullions + 1), 0);
       frame.position.set(cx, (o.top + o.bottom) / 2, cz);
       frame.rotation.y = rotY;
       g.add(frame);
     }
-    if (o.kind === 'door') {
-      const fm = new THREE.MeshStandardMaterial({ color: '#d9d4c7', roughness: 0.7 });
-      const leafMat = new THREE.MeshStandardMaterial({ color: o.color || '#8b6b4e', roughness: 0.6 });
+    if (o.kind === "door") {
+      const fm = new THREE.MeshStandardMaterial({
+        color: "#d9d4c7",
+        roughness: 0.7,
+      });
+      const leafMat = new THREE.MeshStandardMaterial({
+        color: o.color || "#8b6b4e",
+        roughness: 0.6,
+      });
       const door = new THREE.Group();
       const bar = (bw, bh, bx, by, mat = fm, depth = thickness + 0.02) => {
         const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, depth), mat);
         m.position.set(bx, by, 0);
         m.castShadow = true;
         door.add(m);
+        return m;
       };
       bar(0.05, h, -w / 2 + 0.025, h / 2);
       bar(0.05, h, w / 2 - 0.025, h / 2);
       bar(w, 0.05, 0, h - 0.025);
-      bar(w - 0.1, h - 0.07, 0, (h - 0.07) / 2, leafMat, 0.04);
+      const leaf = bar(w - 0.1, h - 0.07, 0, (h - 0.07) / 2, leafMat, 0.04);
       const handle = new THREE.Mesh(
         new THREE.BoxGeometry(0.12, 0.02, 0.02),
-        new THREE.MeshStandardMaterial({ color: '#b9bcc2', metalness: 0.8, roughness: 0.3 })
+        new THREE.MeshStandardMaterial({
+          color: "#b9bcc2",
+          metalness: 0.8,
+          roughness: 0.3,
+        }),
       );
       handle.position.set(w / 2 - 0.15, 1.0, -0.035);
       door.add(handle);
+      if (o.open) {
+        const end = o.hinge === "end",
+          sign = end ? -1 : 1,
+          pivot = new THREE.Group();
+        pivot.position.x = sign * (-w / 2 + 0.05);
+        door.add(pivot);
+        pivot.add(leaf, handle);
+        leaf.position.x = (sign * (w - 0.1)) / 2;
+        handle.position.x = sign * (w - 0.2);
+        pivot.rotation.y = (sign * (o.swing === "out" ? 1 : -1) * Math.PI) / 2;
+      }
       door.position.set(cx, o.bottom, cz);
       door.rotation.y = rotY;
       g.add(door);
 
       // Swing arc on the floor (plan symbol), opening inward. Hinge at the
       // "from" end unless the opening says hinge: 'end'.
-      const hingeEnd = o.hinge === 'end';
+      const hingeEnd = o.hinge === "end";
       const [hx, hz] = at(hingeEnd ? o.to : o.from);
       const sx = hingeEnd ? -ux : ux;
       const sz = hingeEnd ? -uz : uz;
-      const pts = [];
+      const pts = [],
+        swing = o.swing === "out" ? -1 : 1;
       for (let i = 0; i <= 16; i++) {
         const th = (i / 16) * (Math.PI / 2);
-        pts.push(new THREE.Vector3(hx + (sx * Math.cos(th) - nx * Math.sin(th)) * w, 0.01, hz + (sz * Math.cos(th) - nz * Math.sin(th)) * w));
+        pts.push(
+          new THREE.Vector3(
+            hx + (sx * Math.cos(th) - nx * Math.sin(th) * swing) * w,
+            0.01,
+            hz + (sz * Math.cos(th) - nz * Math.sin(th) * swing) * w,
+          ),
+        );
       }
       pts.push(new THREE.Vector3(hx, 0.01, hz));
-      const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#8a8f99' }));
+      const arc = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: "#8a8f99" }),
+      );
       g.add(arc);
     }
   }
@@ -201,10 +313,13 @@ function floorMesh(poly, texKey) {
   const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
   const geo = new THREE.ShapeGeometry(shape);
   geo.rotateX(-Math.PI / 2);
-  const mat = new THREE.MeshStandardMaterial({ map: getFloorTexture(texKey), roughness: 0.9 });
+  const mat = new THREE.MeshStandardMaterial({
+    map: getFloorTexture(texKey),
+    roughness: 0.9,
+  });
   const m = new THREE.Mesh(geo, mat);
   m.receiveShadow = true;
-  m.userData.kind = 'floor';
+  m.userData.kind = "floor";
   return m;
 }
 
@@ -212,7 +327,10 @@ function ceilingMesh(poly, h) {
   const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, z)));
   const geo = new THREE.ShapeGeometry(shape);
   geo.rotateX(Math.PI / 2);
-  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#f7f7f5', roughness: 1 }));
+  const m = new THREE.Mesh(
+    geo,
+    new THREE.MeshStandardMaterial({ color: "#f7f7f5", roughness: 1 }),
+  );
   m.position.y = h;
   m.receiveShadow = true;
   return m;
@@ -223,9 +341,9 @@ function centroidXYZ(poly) {
   return [x, 0.02, z];
 }
 
-function label(text, x, y, z, cls = 'dim') {
-  const el = document.createElement('div');
-  el.className = 'label ' + cls;
+function label(text, x, y, z, cls = "dim") {
+  const el = document.createElement("div");
+  el.className = "label " + cls;
   el.textContent = text;
   const o = new CSS2DObject(el);
   o.position.set(x, y, z);
@@ -233,6 +351,7 @@ function label(text, x, y, z, cls = 'dim') {
 }
 
 export function buildRoom(cfg) {
+  if (cfg.floorPlan) return buildCustomRoom(cfg);
   const { office, kitchen, bathroom, W, L, nw, nd, bw } = roomPolygons(cfg);
   const H = cfg.ceiling;
   const t = cfg.wallThickness;
@@ -240,7 +359,11 @@ export function buildRoom(cfg) {
   const walls = [];
 
   const paint = (id) =>
-    new THREE.MeshStandardMaterial({ color: cfg.wallColors[id] || cfg.wallColor, roughness: 0.95, transparent: true });
+    new THREE.MeshStandardMaterial({
+      color: cfg.wallColors[id] || cfg.wallColor,
+      roughness: 0.95,
+      transparent: true,
+    });
 
   const addWall = (spec) => {
     const g = buildWall({ ...spec, height: H, material: paint(spec.id) });
@@ -254,26 +377,57 @@ export function buildRoom(cfg) {
 
   // Outer envelope, clockwise, each wall extended at its start to close the corner.
   addWall({
-    id: 'north',
+    id: "north",
     a: [0, 0],
     b: [W, 0],
     thickness: t,
     offset: t / 2,
     extendStart: t,
-    openings: [{ kind: 'window', from: 0.08, to: W - 0.08, bottom: win.sill, top: Math.min(win.top, H - 0.05) }],
+    openings: [
+      {
+        kind: "window",
+        from: 0.08,
+        to: W - 0.08,
+        bottom: win.sill,
+        top: Math.min(win.top, H - 0.05),
+      },
+    ],
   });
-  addWall({ id: 'east', a: [W, 0], b: [W, L], thickness: t, offset: t / 2, extendStart: t });
   addWall({
-    id: 'south',
+    id: "east",
+    a: [W, 0],
+    b: [W, L],
+    thickness: t,
+    offset: t / 2,
+    extendStart: t,
+  });
+  addWall({
+    id: "south",
     a: [W, L],
     b: [0, L],
     thickness: t,
     offset: t / 2,
     extendStart: t,
     // Measured from the left corner, so flip into this wall's direction (right → left).
-    openings: [{ kind: 'door', from: W - (ed.from + ed.width), to: W - ed.from, bottom: 0, top: ed.height, color: '#6f5440' }],
+    openings: [
+      {
+        kind: "door",
+        from: W - (ed.from + ed.width),
+        to: W - ed.from,
+        bottom: 0,
+        top: ed.height,
+        color: "#6f5440",
+      },
+    ],
   });
-  addWall({ id: 'west', a: [0, L], b: [0, 0], thickness: t, offset: t / 2, extendStart: t });
+  addWall({
+    id: "west",
+    a: [0, L],
+    b: [0, 0],
+    thickness: t,
+    offset: t / 2,
+    extendStart: t,
+  });
 
   // Kitchen partitions (centred on the line). Direction follows the office
   // polygon so "outward" is the kitchen side.
@@ -281,26 +435,49 @@ export function buildRoom(cfg) {
   // office polygon's edges are their faces.
   const pt = PARTITION;
   const bath = cfg.bathroom;
-  addWall({ id: 'kitchenNorth', a: [W, L - nd], b: [W - nw, L - nd], thickness: pt, offset: pt / 2 });
   addWall({
-    id: 'kitchenWest',
+    id: "kitchenNorth",
+    a: [W, L - nd],
+    b: [W - nw, L - nd],
+    thickness: pt,
+    offset: pt / 2,
+  });
+  addWall({
+    id: "kitchenWest",
     a: [W - nw, L - nd + pt],
     b: [W - nw, L],
     thickness: pt,
     offset: pt / 2,
     // Measured from the inner corner; this wall starts one partition further in.
-    openings: [{ kind: 'door', from: kd.from - pt, to: kd.from - pt + kd.width, bottom: 0, top: kd.height, color: '#c9c3b6' }],
+    openings: [
+      {
+        kind: "door",
+        from: kd.from - pt,
+        to: kd.from - pt + kd.width,
+        bottom: 0,
+        top: kd.height,
+        color: "#c9c3b6",
+      },
+    ],
   });
   if (bathroom) {
     // Kitchen/bathroom wall, centred on x = W - bw. Door measured from the long
     // partition, hinged at its far end, swinging into the kitchen.
     addWall({
-      id: 'bathWall',
+      id: "bathWall",
       a: [W - bw, L - nd + pt],
       b: [W - bw, L],
       thickness: pt,
       openings: [
-        { kind: 'door', from: bath.door.from, to: bath.door.from + bath.door.width, bottom: 0, top: bath.door.height, color: '#c9c3b6', hinge: 'end' },
+        {
+          kind: "door",
+          from: bath.door.from,
+          to: bath.door.from + bath.door.width,
+          bottom: 0,
+          top: bath.door.height,
+          color: "#c9c3b6",
+          hinge: "end",
+        },
       ],
     });
   }
@@ -312,7 +489,7 @@ export function buildRoom(cfg) {
   // 2 cm below the floor planes so the two never z-fight.
   const slab = new THREE.Mesh(
     new THREE.BoxGeometry(W + 2 * t, 0.2, L + 2 * t),
-    new THREE.MeshStandardMaterial({ color: '#8d8a82', roughness: 1 })
+    new THREE.MeshStandardMaterial({ color: "#8d8a82", roughness: 1 }),
   );
   slab.position.set(W / 2, -0.12, L / 2);
   slab.receiveShadow = true;
@@ -332,15 +509,105 @@ export function buildRoom(cfg) {
     label(f(W - nw), (W - nw) / 2, 0.02, L + 0.55),
     label(f(nd), W + 0.65, 0.02, L - nd / 2),
     label(f(nw), W - nw / 2, 0.02, L - nd - 0.35),
-    label(`Office · ${polygonArea(office).toFixed(1)} m²`, W / 2, 0.02, (L - nd) / 2 + 0.6, 'name'),
-    label(`Kitchen · ${polygonArea(kitchen).toFixed(1)} m²`, ...centroidXYZ(kitchen), 'name'),
-    label('Window', W / 2, 0.02, 0.35, 'name'),
-    label('Door', ed.from + ed.width / 2, 0.02, L - 0.3, 'name')
+    label(
+      `Office · ${polygonArea(office).toFixed(1)} m²`,
+      W / 2,
+      0.02,
+      (L - nd) / 2 + 0.6,
+      "name",
+    ),
+    label(
+      `Kitchen · ${polygonArea(kitchen).toFixed(1)} m²`,
+      ...centroidXYZ(kitchen),
+      "name",
+    ),
+    label("Window", W / 2, 0.02, 0.35, "name"),
+    label("Door", ed.from + ed.width / 2, 0.02, L - 0.3, "name"),
   );
-  if (bathroom) labels.add(label(`Bathroom · ${polygonArea(bathroom).toFixed(1)} m²`, ...centroidXYZ(bathroom), 'name'));
+  if (bathroom)
+    labels.add(
+      label(
+        `Bathroom · ${polygonArea(bathroom).toFixed(1)} m²`,
+        ...centroidXYZ(bathroom),
+        "name",
+      ),
+    );
   group.add(labels);
 
-  return { group, walls, ceiling, labels, polygons: { office, kitchen, bathroom }, W, L };
+  return {
+    group,
+    walls,
+    ceiling,
+    labels,
+    polygons: { office, kitchen, bathroom },
+    W,
+    L,
+  };
+}
+
+function buildCustomRoom(cfg) {
+  const info = roomPolygons(cfg),
+    group = new THREE.Group(),
+    walls = [],
+    ceiling = new THREE.Group(),
+    labels = new THREE.Group();
+  const specs = planWalls(cfg.floorPlan);
+  for (const spec of specs) {
+    const material = new THREE.MeshStandardMaterial({
+      color: cfg.wallColors[spec.id] || cfg.wallColor,
+      roughness: 0.95,
+      transparent: true,
+    });
+    const wall = buildWall({
+      ...spec,
+      height: cfg.ceiling,
+      thickness: cfg.wallThickness,
+      extendStart: cfg.wallThickness / 2,
+      extendEnd: cfg.wallThickness / 2,
+      material,
+    });
+    wall.userData.name =
+      spec.owners
+        .map((o) => cfg.floorPlan.rooms.find((r) => r.id === o.roomId).name)
+        .join(" / ") + " wall";
+    walls.push(wall);
+    group.add(wall);
+    const [x, z] = [(spec.a[0] + spec.b[0]) / 2, (spec.a[1] + spec.b[1]) / 2];
+    labels.add(label(`${spec.length.toFixed(2)} m`, x, 0.03, z));
+  }
+  for (const r of info.rooms) {
+    group.add(floorMesh(r.points, r.floor));
+    const shape = new THREE.Shape(
+      r.points.map(([x, z]) => new THREE.Vector2(x, -z)),
+    );
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth: 0.18,
+      bevelEnabled: false,
+      steps: 1,
+    });
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, -0.2, 0);
+    const slab = new THREE.Mesh(
+      geo,
+      new THREE.MeshStandardMaterial({ color: "#8d8a82", roughness: 1 }),
+    );
+    slab.receiveShadow = true;
+    group.add(slab);
+    ceiling.add(ceilingMesh(r.points, cfg.ceiling));
+    const [x, z] = interiorPoint(r.points);
+    labels.add(
+      label(
+        `${r.name} · ${polygonArea(r.interior).toFixed(1)} m²`,
+        x,
+        0.025,
+        z,
+        "name",
+      ),
+    );
+  }
+  ceiling.visible = false;
+  group.add(ceiling, labels);
+  return { ...info, group, walls, ceiling, labels };
 }
 
 export function disposeGroup(g) {

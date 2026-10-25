@@ -333,7 +333,7 @@ export class Editor {
       id: uid(),
       type: def.type,
       x: this.room.W / 2,
-      z: (this.room.L - this.room.nd) / 2,
+      z: (this.room.L - (this.room.nd || 0)) / 2,
       rot: 0,
       elevation: def.elevation || 0,
     };

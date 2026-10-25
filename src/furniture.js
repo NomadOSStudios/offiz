@@ -1011,7 +1011,7 @@ export function artFrame({ w, d, h }, c) {
     paint = mat(c),
     accent = mat(shade(c, 0.22)),
     ink = mat(shade(c, -0.15));
-  g.add(B(w, h, d, frame, 0, 0, 0, 0.006));
+  pictureFrame(g, w, d, h, frame, 0.016);
   g.add(B(w - 0.028, h - 0.028, 0.002, paper, 0, 0.014, d / 2 - 0.007, 0));
   const aw = w * 0.79,
     ah = h * 0.72,
@@ -1167,7 +1167,11 @@ export function counter({ w, d, h }, c) {
     rz = d * 0.3,
     sx = -w * 0.23;
   g.add(B(w - 0.04, plinth, d - 0.09, dark, 0, 0, -0.025));
-  g.add(B(w - 0.02, top - plinth - 0.035, d - 0.03, body, 0, plinth, -0.015));
+  for (const x of [-w / 2 + 0.02, w / 2 - 0.02])
+    g.add(B(0.02, top - plinth - 0.025, d - 0.03, body, x, plinth, -0.015));
+  g.add(
+    B(w - 0.04, top - plinth - 0.025, 0.018, body, 0, plinth, -d / 2 + 0.01),
+  );
   // Keep the cabinet interior below the bowl open, with a dark recess.
   g.add(B(w - 0.02, 0.014, d - 0.03, dark, 0, top - 0.15, -0.015));
   sink(g, w, d, top, sx, rx, rz, stone, steel);
@@ -1265,7 +1269,9 @@ export function basin({ w, d, h }, c) {
     dark = metal();
   const y = h * 0.84;
   g.add(B(w - 0.04, 0.07, d - 0.07, dark, 0, 0, -0.01));
-  g.add(B(w - 0.02, y - 0.105, d - 0.025, body, 0, 0.07, -0.0125));
+  for (const x of [-w / 2 + 0.02, w / 2 - 0.02])
+    g.add(B(0.02, y - 0.095, d - 0.025, body, x, 0.07, -0.0125));
+  g.add(B(w - 0.04, y - 0.095, 0.018, body, 0, 0.07, -d / 2 + 0.01));
   for (let i = 0; i < 2; i++) {
     const dh = (y - 0.1) / 2,
       bottom = 0.075 + i * dh;
@@ -1282,7 +1288,15 @@ export function mirror({ w, d, h }, c) {
   const g = group(),
     frame = metal(c),
     glass = mat("#d8e3e5", { roughness: 0.065, metalness: 0.96 });
-  g.add(B(w, h, d, frame, 0, 0, 0, 0.015));
+  pictureFrame(g, w, d, h, frame, 0.013);
   g.add(B(w - 0.022, h - 0.022, 0.004, glass, 0, 0.011, d / 2 - 0.003, 0.002));
   return done(g, [frame]);
+}
+
+function pictureFrame(g, w, d, h, material, border) {
+  g.add(B(w, h, 0.003, material, 0, 0, -d / 2 + 0.0015, 0.001));
+  for (const x of [-w / 2 + border / 2, w / 2 - border / 2])
+    g.add(B(border, h, d, material, x, 0, 0, 0.004));
+  for (const y of [0, h - border])
+    g.add(B(w - border * 2, border, d, material, 0, y, 0, 0.004));
 }

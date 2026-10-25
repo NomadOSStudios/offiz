@@ -3,6 +3,7 @@
 
 import { CATALOG_BY_TYPE } from "./catalog.js";
 import { FLOORS } from "./textures.js";
+import { floorPlanRoom } from "./floorplan-model.js";
 const KEY = "offiz.v1";
 const LAYOUTS_KEY = "offiz.layouts.v1";
 
@@ -149,10 +150,18 @@ export function validateRoom(r) {
         `${label} must be between ${min.toFixed(2)} and ${max.toFixed(2)} m.`,
       );
   };
-  range(r.width, 2, 50, "Room width");
-  range(r.length, 2, 50, "Room length");
   range(r.ceiling, 2.1, 10, "Ceiling");
   range(r.wallThickness, 0.05, 0.5, "Wall thickness");
+  if (r.floorPlan) {
+    Object.assign(r, floorPlanRoom(r, r.floorPlan));
+    for (const room of r.floorPlan.rooms)
+      if (!FLOORS[room.floor]) throw new Error("Unknown room floor finish.");
+    for (const c of [r.wallColor, ...Object.values(r.wallColors)])
+      if (!/^#[0-9a-f]{6}$/i.test(c)) throw new Error("Invalid paint colour.");
+    return r;
+  }
+  range(r.width, 2, 50, "Room width");
+  range(r.length, 2, 50, "Room length");
   range(r.notch.width, 0.8, r.width - 0.8, "Kitchen section width");
   range(r.notch.depth, 1, r.length - 1, "Kitchen depth");
   range(r.bathroom.width, 0, r.notch.width - 0.8, "Bathroom width");

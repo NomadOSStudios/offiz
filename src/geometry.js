@@ -1,4 +1,5 @@
 // Shared geometry for numeric edits, dragging, plan drawing and layout checks.
+import { customDoorZones } from "./floorplan-model.js";
 const EPS = 1e-6;
 export function footprint(item, def) {
   const a = ((item.rot || 0) * Math.PI) / 180,
@@ -84,6 +85,7 @@ export function bounds(points) {
   };
 }
 export function doorZones(cfg) {
+  if (cfg.floorPlan) return customDoorZones(cfg.floorPlan);
   const W = cfg.width,
     L = cfg.length,
     nw = cfg.notch.width,
@@ -149,7 +151,10 @@ export function layoutWarnings(items, getDef, polygons, cfg) {
       });
     if (d.passable) return;
     for (const door of doorZones(cfg))
-      if ((it.elevation || 0) < 2.1 && overlaps(shapes[i], door.polygon))
+      if (
+        (it.elevation || 0) < (door.height || 2.1) &&
+        overlaps(shapes[i], door.polygon)
+      )
         warnings.push({
           ids: [it.id],
           message: `${d.name} intersects the ${door.name.toLowerCase()} swing.`,
