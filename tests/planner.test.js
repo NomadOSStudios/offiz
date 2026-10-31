@@ -9,13 +9,18 @@ import {
   layoutWarnings,
   doorZones,
 } from "../src/geometry.js";
-import { defaultState, normalizeState, validateRoom } from "../src/store.js";
+import {
+  defaultState,
+  normalizeState,
+  validateRoom,
+  legacyRoomDefaults,
+} from "../src/store.js";
 import { roomPolygons } from "../src/room.js";
 import { CATALOG_BY_TYPE, itemDef } from "../src/catalog.js";
 import { Editor } from "../src/editor.js";
 import { planSVG } from "../src/plan.js";
 const def = (it) => itemDef(CATALOG_BY_TYPE[it.type], it);
-const room = defaultState().room,
+const room = structuredClone(legacyRoomDefaults),
   polys = roomPolygons(room),
   polygons = {
     office: polys.office,
@@ -201,7 +206,10 @@ test("layout checks permit rugs and supported monitors but detect furniture and 
   );
 });
 test("imports retain groups and cameras, merge older room defaults and reject malformed data", () => {
-  const state = defaultState();
+  const state = {
+    ...defaultState(),
+    room: structuredClone(legacyRoomDefaults),
+  };
   delete state.room.bathroom;
   state.items = [desk("a", 2, 2, { group: "station" })];
   state.views = [
@@ -210,7 +218,7 @@ test("imports retain groups and cameras, merge older room defaults and reject ma
   const normalized = normalizeState(state);
   assert.equal(normalized.items[0].group, "station");
   assert.equal(normalized.views.length, 1);
-  assert.equal(normalized.room.bathroom.width, 1.75);
+  assert.equal(normalized.room.bathroom.width, 1.4);
   assert.throws(
     () => normalizeState({ ...state, items: [desk(), desk()] }),
     /duplicate/,
@@ -229,7 +237,7 @@ test("exported plans are independent SVGs with measurements and escaped item IDs
   s.items = [desk('test"<>&')];
   const svg = planSVG(s);
   assert.ok(svg.startsWith("<svg xmlns="));
-  assert.ok(svg.includes("6.70 m"));
+  assert.ok(svg.includes("6.80 m"));
   assert.ok(svg.includes("test&quot;&lt;&gt;&amp;"));
   assert.ok(!svg.includes('data-item="test"<'));
 });

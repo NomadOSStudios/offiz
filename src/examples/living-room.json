@@ -1,0 +1,172 @@
+{
+  "room": {
+    "width": 6.8,
+    "length": 5.6,
+    "ceiling": 2.8,
+    "wallThickness": 0.15,
+    "wallColor": "#f2ece0",
+    "wallColors": {},
+    "floor": "oak",
+    "floorPlan": {
+      "version": 1,
+      "rooms": [
+        {
+          "id": "living-room",
+          "name": "The Sunday room",
+          "floor": "oak",
+          "points": [
+            [0, 0],
+            [6.8, 0],
+            [6.8, 5.6],
+            [0, 5.6]
+          ]
+        }
+      ],
+      "openings": [
+        {
+          "id": "garden-window",
+          "roomId": "living-room",
+          "edge": 0,
+          "kind": "window",
+          "from": 1.2,
+          "width": 2.8,
+          "height": 1.4,
+          "sill": 1.1,
+          "hinge": "start",
+          "swing": "in"
+        },
+        {
+          "id": "side-window",
+          "roomId": "living-room",
+          "edge": 1,
+          "kind": "window",
+          "from": 0.8,
+          "width": 1.7,
+          "height": 1.6,
+          "sill": 0.8,
+          "hinge": "start",
+          "swing": "in"
+        },
+        {
+          "id": "entry",
+          "roomId": "living-room",
+          "edge": 2,
+          "kind": "door",
+          "from": 0.45,
+          "width": 0.95,
+          "height": 2.15,
+          "sill": 0,
+          "hinge": "start",
+          "swing": "in"
+        }
+      ]
+    }
+  },
+  "items": [
+    {
+      "id": "starter-sectional",
+      "type": "sectional",
+      "x": 2.8,
+      "z": 1.15,
+      "rot": 0,
+      "color": "#74816a"
+    },
+    {
+      "id": "starter-rug",
+      "type": "rug",
+      "x": 3,
+      "z": 2.55,
+      "rot": 0,
+      "w": 3.6,
+      "d": 2.8,
+      "color": "#d2c3a8"
+    },
+    {
+      "id": "starter-coffee-table",
+      "type": "coffeeTable",
+      "x": 3.15,
+      "z": 2.7,
+      "rot": 0,
+      "w": 1.2,
+      "d": 0.65,
+      "h": 0.38,
+      "color": "#8b684d"
+    },
+    {
+      "id": "starter-armchair",
+      "type": "armchair",
+      "x": 4.9,
+      "z": 2.85,
+      "rot": -90,
+      "color": "#c6b79e"
+    },
+    {
+      "id": "starter-side-table",
+      "type": "sideTable",
+      "x": 0.8,
+      "z": 0.95,
+      "rot": 0,
+      "color": "#94704d"
+    },
+    {
+      "id": "starter-table-lamp",
+      "type": "tableLamp",
+      "x": 0.8,
+      "z": 0.95,
+      "rot": 0,
+      "elevation": 0.55,
+      "color": "#b97e5d"
+    },
+    {
+      "id": "starter-floor-lamp",
+      "type": "floorLamp",
+      "x": 5.25,
+      "z": 1.4,
+      "rot": 0,
+      "color": "#e6d5b4"
+    },
+    {
+      "id": "starter-plant",
+      "type": "plant",
+      "x": 6.15,
+      "z": 0.65,
+      "rot": 0,
+      "color": "#53714c"
+    },
+    {
+      "id": "starter-console",
+      "type": "mediaConsole",
+      "x": 3.1,
+      "z": 5.15,
+      "rot": 180,
+      "color": "#86634b"
+    },
+    {
+      "id": "starter-tv",
+      "type": "television",
+      "x": 3.1,
+      "z": 5.15,
+      "rot": 180,
+      "elevation": 0.55
+    },
+    {
+      "id": "starter-bookshelf",
+      "type": "bookshelfLow",
+      "x": 0.3,
+      "z": 3.85,
+      "rot": 90,
+      "color": "#a08059"
+    },
+    {
+      "id": "starter-art",
+      "type": "artLarge",
+      "x": 0.1,
+      "z": 2.35,
+      "rot": 90,
+      "elevation": 1.15,
+      "color": "#ad765a"
+    }
+  ],
+  "lighting": { "hour": 15, "ceilingLights": false },
+  "views": []
+}

@@ -1,73 +1,74 @@
-// App state: room configuration (from Emad's sketch), furniture items, lighting.
-// Autosaved to localStorage; export/import as JSON.
-
+// Local layouts stay in browser storage. Only fictional starter rooms ship.
 import { CATALOG_BY_TYPE } from "./catalog.js";
 import { FLOORS } from "./textures.js";
 import { floorPlanRoom } from "./floorplan-model.js";
+import livingRoom from "./examples/living-room.json" with { type: "json" };
+import bedroom from "./examples/bedroom.json" with { type: "json" };
 const KEY = "offiz.v1";
 const LAYOUTS_KEY = "offiz.layouts.v1";
+const starterStates = { "living-room": livingRoom, bedroom };
+export const STARTER_LAYOUTS = [
+  {
+    id: "living-room",
+    name: "The Sunday room",
+    label: "living room",
+    description:
+      "A sunlit living room with olive upholstery, warm oak and walnut.",
+  },
+  {
+    id: "bedroom",
+    name: "The quiet room",
+    label: "bedroom",
+    description:
+      "A calm bedroom with a king bed, sage walls, light ash floors and a reading corner.",
+  },
+];
+export function starterState(id) {
+  if (!Object.hasOwn(starterStates, id))
+    throw new Error("Unknown starter layout.");
+  return structuredClone(starterStates[id]);
+}
 
-// All distances in metres. Plan orientation: x runs along the window wall
-// (left → right), z runs from the window wall (z = 0) towards the entrance
-// wall (z = length). The kitchen sits in the notch at the bottom-right.
-export const defaultRoom = {
-  width: 6.7,
-  length: 9.5,
+// Generic fallback values for incomplete files from the old parametric schema.
+// Complete older saves retain their own dimensions; no private layout is bundled.
+export const legacyRoomDefaults = {
+  width: 8,
+  length: 7,
   ceiling: 2.7,
-  notch: { width: 3.5, depth: 2.3 },
+  notch: { width: 3, depth: 2 },
   wallThickness: 0.15,
-  // The whole top wall is glazing from 1.5 m up to (almost) the ceiling.
-  window: { sill: 1.5, top: 2.6 },
-  // Entrance door on the bottom wall, measured from the left corner.
-  entranceDoor: { from: 1.2, width: 0.9, height: 2.1 },
-  // Kitchen door on the side partition, measured from the inner corner (top of notch).
-  kitchenDoor: { from: 1.0, width: 0.8, height: 2.1 },
-  // Bathroom is the far-right part of the notch, full depth. Its door is on the
-  // kitchen/bathroom wall, measured from the long partition. Width 0 = none.
+  window: { sill: 1, top: 2.5 },
+  entranceDoor: { from: 1, width: 0.9, height: 2.1 },
+  kitchenDoor: { from: 0.2, width: 0.8, height: 2.1 },
   bathroom: {
-    width: 1.75,
-    door: { from: 0.6, width: 0.7, height: 2.1 },
+    width: 1.4,
+    door: { from: 0.25, width: 0.7, height: 2.1 },
     floor: "tileDark",
   },
   wallColor: "#f2efe8",
   wallColors: {},
-  floor: "carpetTiles",
+  floor: "oak",
   kitchenFloor: "tile",
 };
+export const defaultRoom = structuredClone(livingRoom.room);
 
 let nextId = 1;
 export const uid = () =>
   `i${Date.now().toString(36)}${(nextId++).toString(36)}`;
 
 export function starterItems() {
-  return [
-    { id: uid(), type: "desk", x: 2.0, z: 2.2, rot: 0 },
-    { id: uid(), type: "monitor", x: 2.0, z: 2.0, rot: 180, elevation: 0.75 },
-    { id: uid(), type: "officeChair", x: 2.0, z: 2.9, rot: 180 },
-    { id: uid(), type: "plant", x: 0.45, z: 0.5, rot: 0 },
-    { id: uid(), type: "bookshelf", x: 0.2, z: 4.2, rot: 90 },
-    {
-      id: uid(),
-      type: "whiteboard",
-      x: 0.025,
-      z: 6.0,
-      rot: 90,
-      elevation: 0.9,
-    },
-    { id: uid(), type: "sofa", x: 6.25, z: 4.6, rot: -90 },
-    { id: uid(), type: "coffeeTable", x: 5.3, z: 4.6, rot: 0 },
-    { id: uid(), type: "rug", x: 5.3, z: 4.6, rot: 90 },
-    { id: uid(), type: "counterShort", x: 4.1, z: 9.2, rot: 180 },
-    { id: uid(), type: "fridge", x: 4.55, z: 7.65, rot: 0 },
-    { id: uid(), type: "toilet", x: 6.35, z: 8.9, rot: -90 },
-    { id: uid(), type: "basin", x: 5.85, z: 7.5, rot: 0 },
-    { id: uid(), type: "mirror", x: 5.85, z: 7.325, rot: 0, elevation: 1.25 },
-  ];
+  return structuredClone(livingRoom.items);
 }
 
 // Saved rooms from older versions get any new settings filled in.
 function mergeRoom(saved = {}) {
-  const d = structuredClone(defaultRoom);
+  if (saved.floorPlan)
+    return {
+      ...structuredClone(defaultRoom),
+      ...saved,
+      wallColors: { ...(saved.wallColors || {}) },
+    };
+  const d = structuredClone(legacyRoomDefaults);
   const out = { ...d, ...saved };
   for (const k of [
     "notch",
@@ -83,11 +84,7 @@ function mergeRoom(saved = {}) {
 }
 
 export function defaultState() {
-  return {
-    room: structuredClone(defaultRoom),
-    items: starterItems(),
-    lighting: { hour: 14, ceilingLights: true },
-  };
+  return starterState("living-room");
 }
 
 export let loadError = null;

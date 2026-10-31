@@ -115,9 +115,28 @@ export function planMarkup(
     const stroke = sel ? "#bc8512" : warn ? "#ce5963" : "#63776b";
     out += `<g data-item="${esc(it.id)}" role="button" tabindex="0" aria-label="${esc(def.name + " at " + it.x.toFixed(2) + ", " + it.z.toFixed(2) + " metres")}" transform="translate(${it.x} ${it.z}) rotate(${-(it.rot || 0)})" style="cursor:move"><title>${esc(def.name)}</title><rect x="${-def.w / 2}" y="${-def.d / 2}" width="${def.w}" height="${def.d}" rx=".035" fill="${sel ? "#f8e7bb" : def.passable ? "#ede6d9" : "#dce5db"}" fill-opacity="${def.passable ? 0.65 : 1}" stroke="${stroke}" stroke-width="${sel ? 0.035 : 0.018}"/>`;
     // Orientation mark and furniture detail make the silhouette legible at a glance.
-    if (def.cat === "Seating")
+    if (
+      def.type.startsWith("bed") &&
+      ["bedSingle", "bedDouble", "bedKing"].includes(def.type)
+    )
+      out += `<rect x="${-def.w * 0.43}" y="${-def.d * 0.43}" width="${def.w * 0.86}" height="${def.d * 0.22}" rx=".05" fill="#f6f1e6" stroke="${stroke}" stroke-width=".012"/><path d="M ${-def.w * 0.45} ${def.d * 0.22} H ${def.w * 0.45}" stroke="${stroke}" stroke-width=".025"/>`;
+    else if (
+      def.cat === "Seating" ||
+      [
+        "sofa",
+        "sofa3",
+        "armchair",
+        "sectional",
+        "ottoman",
+        "bedBench",
+      ].includes(def.type)
+    )
       out += `<path d="M ${-def.w * 0.4} ${-def.d * 0.35} H ${def.w * 0.4}" stroke="${stroke}" stroke-width=".07" fill="none"/>`;
-    else if (def.cat === "Storage" || def.cat === "Kitchen")
+    else if (
+      def.cat === "Storage" ||
+      def.cat === "Kitchen" ||
+      ["nightstand", "dresser", "wardrobe", "mediaConsole"].includes(def.type)
+    )
       out += line(
         [0, -def.d / 2],
         [0, def.d / 2],

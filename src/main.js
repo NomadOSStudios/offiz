@@ -27,7 +27,8 @@ import {
   saveState,
   exportState,
   importState,
-  defaultState,
+  STARTER_LAYOUTS,
+  starterState,
   loadLayouts,
   saveLayouts,
   validateRoom,
@@ -80,7 +81,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 viewport.appendChild(renderer.domElement);
-renderer.domElement.setAttribute("aria-label", "Interactive 3D office");
+renderer.domElement.setAttribute("aria-label", "Interactive 3D room");
 const labels = new CSS2DRenderer();
 labels.domElement.className = "labels";
 viewport.appendChild(labels.domElement);
@@ -283,7 +284,7 @@ function setView(next) {
   $("viewTitle").textContent =
     next === "plan"
       ? "Every centimetre, considered."
-      : "A place to do your best work.";
+      : "Make yourself at home.";
   $("viewSubtitle").textContent =
     next === "plan"
       ? "Drag pieces to arrange · Scroll to zoom · Drag empty space to pan"
@@ -748,6 +749,39 @@ function writeLayouts(next) {
     return false;
   }
 }
+function openStarterLayout(id) {
+  const template = STARTER_LAYOUTS.find((entry) => entry.id === id),
+    current = structuredClone(snapshot()),
+    starter = starterState(id);
+  // Opening the example never discards a private room, even after a reload.
+  const serialized = JSON.stringify(current);
+  if (
+    serialized !== JSON.stringify(starter) &&
+    !layouts.some((l) => JSON.stringify(l.state) === serialized)
+  ) {
+    if (layouts.length >= 30)
+      return message(
+        "Save an export or free a layout slot before opening the starter. Your current room is unchanged.",
+      );
+    if (
+      !writeLayouts([
+        ...layouts,
+        {
+          id: uid(),
+          name: `Before ${template.label} starter`,
+          state: current,
+        },
+      ])
+    )
+      return;
+  }
+  applyState(starter, { fit: true });
+  setView("3d");
+  closeDialog();
+  message(
+    `${template.name} opened. Your previous room is available in Layouts and Undo.`,
+  );
+}
 function layoutsDialog() {
   const list = el("div", { class: "dialog-list" });
   for (const l of layouts) {
@@ -798,10 +832,32 @@ function layoutsDialog() {
     );
   }
   openDialog("A little room for alternatives", [
+    ...STARTER_LAYOUTS.map((template) =>
+      el("div", { class: "starter-card" }, [
+        el("span", { class: "eyebrow" }, ["INCLUDED WITH OFFIZ"]),
+        el("h3", {}, [template.name]),
+        el("p", { class: "hint" }, [template.description]),
+        el("div", { class: "row" }, [
+          button(
+            `Open ${template.label}`,
+            () => openStarterLayout(template.id),
+            "primary",
+          ),
+          button(`Download ${template.label} JSON`, () =>
+            downloadBlob(
+              new Blob([JSON.stringify(starterState(template.id), null, 2)], {
+                type: "application/json",
+              }),
+              `offiz-${template.id}.json`,
+            ),
+          ),
+        ]),
+      ]),
+    ),
     el("p", { class: "hint" }, [
-      "Save a named version, explore another idea, then compare the plans side by side. Your current layout continues to autosave.",
+      "Opening a starter saves your current room to this browser's Layouts. Save named versions, explore another idea, then compare the plans side by side.",
     ]),
-    nameForm("Save layout", "e.g. Open workspace", (name) => {
+    nameForm("Save layout", "e.g. Reading corner", (name) => {
       if (layouts.length >= 30)
         return message("You can keep up to 30 saved layouts.");
       if (
@@ -963,17 +1019,7 @@ $("moreBtn").onclick = () =>
   openDialog("Workspace files", [
     el("div", { class: "row" }, [
       button("Import layout JSON", () => $("importFile").click()),
-      button(
-        "Reset to starter layout",
-        () => {
-          applyState(defaultState(), { fit: true });
-          closeDialog();
-          message(
-            "Starter layout restored. Undo returns to your previous room.",
-          );
-        },
-        "danger",
-      ),
+      button("Choose a starter layout", layoutsDialog),
     ]),
     ...(getRecoveryState()
       ? [

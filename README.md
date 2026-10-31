@@ -1,6 +1,7 @@
 # Offiz
 
-A local office planning studio. The room, furniture, materials, layout alternatives
+A local room planning studio for living rooms, bedrooms and workspaces. The room,
+furniture, materials, layout alternatives
 and camera bookmarks stay in this browser. No accounts or uploads.
 
 ## Run and verify
@@ -94,15 +95,30 @@ rugs and objects at separate heights are excluded from overlap warnings.
   contain the current layout and its camera bookmarks, not the whole alternatives
   library. Save exports as backups; browser storage is local to each site origin.
 
-## The measured room
+## Included starter layouts
 
-The default room is 6.70 m × 9.50 m with a 3.50 m × 2.30 m notch at the
-bottom-right. The notch contains a kitchen and bathroom. The entrance is on the
-remaining 3.20 m wall. The window spans the top wall, starting 1.50 m above the
-floor. All of these measurements are editable.
+New installations open **The Sunday room**, a fictional 6.80 × 5.60 m living room
+with oak flooring, an olive chaise sectional, a walnut media console and TV,
+a reading chair, a rug, layered lighting, shelving, art and a plant. The entry
+and furniture have clear placement checks. Every piece and finish is editable.
 
-X runs along the window wall; Z runs from the window toward the entrance. Daylight
-is an illustrative time-of-day simulation, not a location/date-based sun study.
+**The quiet room** is a second starter: a fictional 5.60 × 5.40 m bedroom with
+a king bed, paired bedside tables and lamps, a sage feature wall, light ash floors,
+a wardrobe, dresser and mirror, an upholstered bench and a reading corner.
+
+Use **Layouts → Open living room** or **Open bedroom** to choose a starter. Your
+current arrangement is first preserved in the browser's saved Layouts; opening
+one also supports Undo. Each starter has its own JSON download, independent of
+the current room. Their sources are [`src/examples/living-room.json`](src/examples/living-room.json)
+and [`src/examples/bedroom.json`](src/examples/bedroom.json).
+
+Personal rooms are not bundled or read during the build. Existing autosaves and
+older office files remain supported locally. The former measured-office starter
+has been removed from the current source and build. Historical Git commits are
+unchanged.
+
+X and Z are horizontal plan coordinates, measured in metres. Daylight is an
+illustrative time-of-day simulation, not a location/date-based sun study.
 
 ## Furniture models
 
@@ -111,6 +127,13 @@ and seams, curved leaves, recessed bowls, cabinet hardware and desktop details.
 Wood, woven fabric, mesh and ceramic surfaces use small procedural textures; no
 external model or texture downloads are needed. Library thumbnails render the same
 geometry and materials as the room. Existing layouts get the new models automatically.
+
+**Living room** includes sofas, a chaise sectional, armchair, coffee and side
+tables, media console, television, ottoman and table lamp. **Bedroom** includes
+single, double and king beds with layered bedding, bedside tables and lamps,
+a dresser, wardrobe and upholstered bed-end bench. Shared rugs, plants, art and
+floor lamps are under Decor. Work, Seating, Storage, Kitchen and Bathroom remain
+available for other spaces.
 
 Dimensions describe each item's complete placement envelope, including its
 hardware. Geometry fits inside that envelope when resized. Small details are
@@ -136,7 +159,8 @@ production builds. **Back to studio** returns to the planner.
 | `thumbnails.js` | Local 3D catalog thumbnails |
 | `store.js` | Defaults, validated imports, autosave and saved alternatives |
 | `room.js`, `catalog.js` | Room geometry, furniture definitions and placement envelopes |
-| `furniture.js`, `model-kit.js` | Detailed furniture, shared construction helpers and procedural surfaces |
+| `furniture.js`, `home-furniture.js`, `model-kit.js` | Detailed furniture, shared construction helpers and procedural surfaces |
+| `examples/living-room.json`, `examples/bedroom.json` | The two fictional starter rooms and their furnishings |
 | `lighting.js`, `textures.js`, `photo.js` | Lighting, procedural materials and photo rendering |
 
 `tests/planner.test.js` covers history branching, concave containment, rotation,
@@ -146,6 +170,8 @@ conflicts, import validation and standalone SVG output.
 independent finishes, recessed sinks and visible frame insets.
 `tests/floorplan.test.js` covers custom room shapes, shared walls, openings,
 walkthrough boundaries, legacy conversion, history and JSON/SVG preservation.
+`tests/starter.test.js` covers the bundled rooms' clearances, independent defaults,
+catalog coverage and preservation of existing local saves.
 
 ## About
 
@@ -154,9 +180,8 @@ office, measured on site, turned into a planner for that exact room. It was
 built with AI coding assistants (Claude Code and Codex) and runs entirely on
 your own machine — no accounts, no uploads, nothing phones home.
 
-Measurements of the default room are real; the furniture is parametric
-geometry rather than product models, which is enough to answer "does this
-layout work?" before anything gets bought or moved.
+The included starter rooms are fictional. Furniture is parametric geometry rather
+than product models, useful for exploring a layout before buying or moving it.
 
 ## License
 

@@ -2,7 +2,7 @@
   "name": "offiz",
   "private": true,
   "version": "0.1.0",
-  "description": "Local-first 3D office planner: measure a room, arrange furniture, pick finishes, and path-trace a photo of it. Vite + Three.js.",
+  "description": "Local-first 3D room planner: design living rooms, bedrooms and workspaces, arrange furniture, pick finishes, and path-trace a photo. Vite + Three.js.",
   "type": "module",
   "scripts": {
     "dev": "vite",

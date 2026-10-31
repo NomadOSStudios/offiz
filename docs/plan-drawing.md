@@ -2,7 +2,7 @@
 
 Goal: replace the fixed "L-shape with parameters" room with a room the user
 draws in Plan mode, so Offiz works for any office, not just the measured one.
-The measured room stays as the default template. Everything remains local.
+The bundled template is now a fictional living room. Private measured rooms stay in local saves; they are not included with the project.
 
 ## Data model
 
@@ -89,7 +89,7 @@ New toolbar in Plan: **Select · Draw walls · Draw partition · Add door · Add
 - Room tab: ceiling, wall thickness, paint; a wall list with lengths (editable);
   an openings list; an areas list with name + floor. The old numeric fields
   for notch/bathroom/doors go away once the migration is in.
-- Keep "Reset to the measured room" as a one-click template.
+- Offer the fictional living room as a one-click template while preserving the current room locally.
 
 ## Tests (`tests/planner.test.js`)
 

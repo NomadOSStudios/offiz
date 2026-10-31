@@ -954,6 +954,21 @@ dialog::backdrop {
 }
 
 /* The floor-plan editor has its own draft history until Apply is pressed. */
+.starter-card {
+  padding: 18px;
+  margin-bottom: 20px;
+  border: 1px solid #627664;
+  border-radius: 12px;
+  background: #34433c;
+}
+.starter-card h3 {
+  margin: 8px 0;
+  color: #efe4c9;
+}
+.starter-card .row {
+  flex-wrap: wrap;
+}
+
 dialog.floorplan-dialog {
   width: min(1240px, 96vw);
   max-width: none;

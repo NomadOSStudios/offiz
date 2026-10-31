@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultRoom, defaultState, normalizeState } from "../src/store.js";
+import {
+  defaultRoom,
+  defaultState,
+  normalizeState,
+  legacyRoomDefaults,
+} from "../src/store.js";
 import {
   legacyFloorPlan,
   validateFloorPlan,
@@ -62,8 +67,8 @@ const adjacent = () => ({
   openings: [door()],
 });
 
-test("the original office converts to three editable rooms without losing its openings", () => {
-  const p = validateFloorPlan(legacyFloorPlan(defaultRoom));
+test("a legacy parametric room converts without losing its openings", () => {
+  const p = validateFloorPlan(legacyFloorPlan(legacyRoomDefaults));
   assert.equal(p.rooms.length, 3);
   assert.equal(p.openings.length, 4);
   const walls = planWalls(p);
@@ -222,7 +227,10 @@ test("hinges and swing direction affect door clearances and walkthrough crosses 
   assert.equal(flipped.inward[0], 1);
 });
 test("custom plans survive JSON round trips and history while legacy files keep their old room schema", () => {
-  const initial = defaultState(),
+  const initial = {
+      ...defaultState(),
+      room: structuredClone(legacyRoomDefaults),
+    },
     state = { ...initial, room: floorPlanRoom(defaultRoom, adjacent()) };
   const restored = normalizeState(JSON.parse(JSON.stringify(state)));
   assert.deepEqual(restored.room.floorPlan, state.room.floorPlan);

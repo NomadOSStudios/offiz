@@ -126,7 +126,7 @@ new ResizeObserver(() => {
   camera.updateProjectionMatrix();
   if (item) fit();
 }).observe(stage);
-show(CATALOG.find((d) => d.type === "officeChair"));
+show(CATALOG.find((d) => d.type === "sectional"));
 renderer.setAnimationLoop(() => {
   controls.update();
   renderer.render(scene, camera);
